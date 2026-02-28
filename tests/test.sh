@@ -324,6 +324,13 @@ assert 10 "int main() { return '\\n'; }"
 assert 92 "int main() { return '\\\\'; }"
 assert 0 "int main() { return '\\0'; }"
 
+# Step 6.4: string concatenation
+assert 104 'int main() { char *s = "hel" "lo"; return s[0]; }'
+assert 111 'int main() { char *s = "hel" "lo"; return s[4]; }'
+assert 0 'int main() { char *s = "hel" "lo"; return s[5]; }'
+assert 97 'int main() { char *s = "a" "b" "c"; return s[0]; }'
+assert 99 'int main() { char *s = "a" "b" "c"; return s[2]; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

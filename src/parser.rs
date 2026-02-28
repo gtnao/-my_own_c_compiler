@@ -976,7 +976,13 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Str(s) => {
                 self.advance();
-                Expr::StrLit(s)
+                // String concatenation: "hello" " " "world"
+                let mut bytes = s;
+                while let TokenKind::Str(next) = &self.current().kind {
+                    bytes.extend_from_slice(next);
+                    self.advance();
+                }
+                Expr::StrLit(bytes)
             }
             TokenKind::Ident(name) => {
                 self.advance();
