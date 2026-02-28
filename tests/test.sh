@@ -358,6 +358,12 @@ assert 10 'int main() { struct { int a; } s; s.a = 10; struct { int a; } *p = &s
 assert 42 'int main() { struct { int x; int y; } s; struct { int x; int y; } *p = &s; p->x = 42; return s.x; }'
 assert 7 'int main() { struct { int a; int b; } s; s.a = 3; s.b = 4; struct { int a; int b; } *p = &s; return p->a + p->b; }'
 
+# Step 7.4: tagged structs
+assert 3 'int main() { struct Point { int x; int y; }; struct Point p; p.x = 1; p.y = 2; return p.x + p.y; }'
+assert 10 'int main() { struct Foo { int a; }; struct Foo f; f.a = 10; return f.a; }'
+assert 7 'int main() { struct S { int x; int y; }; struct S a; struct S b; a.x = 3; b.x = 4; return a.x + b.x; }'
+assert 42 'int main() { struct S { int val; }; struct S s; s.val = 42; struct S *p = &s; return p->val; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

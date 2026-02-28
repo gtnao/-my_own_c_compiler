@@ -13,6 +13,7 @@ pub struct Parser<'a> {
     scopes: Vec<HashMap<String, String>>,
     unique_counter: usize,
     globals: Vec<(Type, String)>,
+    struct_tags: HashMap<String, Type>,
 }
 
 impl<'a> Parser<'a> {
@@ -25,6 +26,7 @@ impl<'a> Parser<'a> {
             scopes: Vec::new(),
             unique_counter: 0,
             globals: Vec::new(),
+            struct_tags: HashMap::new(),
         }
     }
 
@@ -57,8 +59,31 @@ impl<'a> Parser<'a> {
             return false;
         }
         let mut i = self.pos;
+        // Skip type keywords
         while Self::is_type_keyword(&self.tokens[i].kind) {
-            i += 1;
+            // For "struct", skip optional tag name and body
+            if self.tokens[i].kind == TokenKind::Struct {
+                i += 1;
+                // Skip tag name if present
+                if let TokenKind::Ident(_) = &self.tokens[i].kind {
+                    i += 1;
+                }
+                // Skip struct body { ... } if present
+                if self.tokens[i].kind == TokenKind::LBrace {
+                    i += 1;
+                    let mut depth = 1;
+                    while depth > 0 {
+                        if self.tokens[i].kind == TokenKind::LBrace {
+                            depth += 1;
+                        } else if self.tokens[i].kind == TokenKind::RBrace {
+                            depth -= 1;
+                        }
+                        i += 1;
+                    }
+                }
+            } else {
+                i += 1;
+            }
         }
         // Skip pointer stars
         while self.tokens[i].kind == TokenKind::Star {
@@ -149,37 +174,71 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Struct => {
                 self.advance();
-                self.expect(TokenKind::LBrace);
-                let mut members = Vec::new();
-                let mut offset = 0;
-                while self.current().kind != TokenKind::RBrace {
-                    let mem_ty = self.parse_type();
-                    let mem_name = match &self.current().kind {
-                        TokenKind::Ident(s) => s.clone(),
-                        _ => {
+                // Check for tag name
+                let tag_name = if let TokenKind::Ident(s) = &self.current().kind {
+                    let name = s.clone();
+                    self.advance();
+                    Some(name)
+                } else {
+                    None
+                };
+
+                // Parse body if present
+                let ty = if self.current().kind == TokenKind::LBrace {
+                    self.advance();
+                    let mut members = Vec::new();
+                    let mut offset = 0;
+                    while self.current().kind != TokenKind::RBrace {
+                        let mem_ty = self.parse_type();
+                        let mem_name = match &self.current().kind {
+                            TokenKind::Ident(s) => s.clone(),
+                            _ => {
+                                self.reporter.error_at(
+                                    self.current().pos,
+                                    "expected member name",
+                                );
+                            }
+                        };
+                        self.advance();
+                        self.expect(TokenKind::Semicolon);
+                        // Align offset to member alignment
+                        let align = mem_ty.align();
+                        offset = (offset + align - 1) & !(align - 1);
+                        members.push(StructMember {
+                            name: mem_name,
+                            ty: mem_ty.clone(),
+                            offset,
+                        });
+                        offset += mem_ty.size();
+                    }
+                    self.expect(TokenKind::RBrace);
+                    let ty = Type {
+                        kind: crate::types::TypeKind::Struct(members),
+                        is_unsigned: false,
+                    };
+                    // Register tag if present
+                    if let Some(ref tag) = tag_name {
+                        self.struct_tags.insert(tag.clone(), ty.clone());
+                    }
+                    ty
+                } else if let Some(ref tag) = tag_name {
+                    // Look up tag
+                    match self.struct_tags.get(tag) {
+                        Some(ty) => ty.clone(),
+                        None => {
                             self.reporter.error_at(
                                 self.current().pos,
-                                "expected member name",
+                                &format!("unknown struct tag '{}'", tag),
                             );
                         }
-                    };
-                    self.advance();
-                    self.expect(TokenKind::Semicolon);
-                    // Align offset to member alignment
-                    let align = mem_ty.align();
-                    offset = (offset + align - 1) & !(align - 1);
-                    members.push(StructMember {
-                        name: mem_name,
-                        ty: mem_ty.clone(),
-                        offset,
-                    });
-                    offset += mem_ty.size();
-                }
-                self.expect(TokenKind::RBrace);
-                Type {
-                    kind: crate::types::TypeKind::Struct(members),
-                    is_unsigned: false,
-                }
+                    }
+                } else {
+                    self.reporter.error_at(
+                        self.current().pos,
+                        "expected struct tag or body",
+                    );
+                };
+                ty
             }
             _ => {
                 if is_unsigned {
@@ -500,8 +559,14 @@ impl<'a> Parser<'a> {
     }
 
     // var_decl = type ident ("[" num "]")* ("=" expr)? ";"
+    //         | "struct" tag "{" ... "}" ";"  (tag definition only)
     fn var_decl(&mut self) -> Stmt {
         let ty = self.parse_type();
+        // Allow struct tag definition without variable declaration
+        if self.current().kind == TokenKind::Semicolon {
+            self.advance();
+            return Stmt::Block(vec![]);
+        }
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
