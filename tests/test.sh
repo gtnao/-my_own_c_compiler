@@ -166,6 +166,10 @@ assert 120 'int fact(int n) { if (n <= 1) return 1; return n * fact(n - 1); } in
 assert 55 'int fib(int n) { if (n <= 1) return n; return fib(n-1) + fib(n-2); } int main() { return fib(10); }'
 assert 21 'int add6(int a, int b, int c, int d, int e, int f) { return a+b+c+d+e+f; } int main() { return add6(1,2,3,4,5,6); }'
 
+# Step 3.3: stack-passed arguments (7+)
+assert 36 'int add8(int a, int b, int c, int d, int e, int f, int g, int h) { return a+b+c+d+e+f+g+h; } int main() { return add8(1,2,3,4,5,6,7,8); }'
+assert 28 'int add7(int a, int b, int c, int d, int e, int f, int g) { return a+b+c+d+e+f+g; } int main() { return add7(1,2,3,4,5,6,7); }'
+
 # Step 2.15: continue, goto, labels
 assert 25 'int main() { int s = 0; int i; for (i = 0; i < 10; i++) { if (i % 2 == 0) continue; s += i; } return s; }'
 assert 2 'int main() { goto end; return 1; end: return 2; }'

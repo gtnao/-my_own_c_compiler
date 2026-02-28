@@ -65,11 +65,18 @@ impl Codegen {
             self.emit(&format!("  sub ${}, %rsp", self.stack_size));
         }
 
-        // Store register parameters to stack
+        // Store register parameters to stack (first 6)
         let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
-        for (i, param) in func.params.iter().enumerate() {
+        for (i, param) in func.params.iter().enumerate().take(6) {
             let offset = self.locals[param];
             self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs[i], offset));
+        }
+        // Copy stack parameters to local slots (7th and beyond)
+        for (i, param) in func.params.iter().enumerate().skip(6) {
+            let src_offset = 16 + (i - 6) * 8;
+            let dst_offset = self.locals[param];
+            self.emit(&format!("  mov {}(%rbp), %rax", src_offset));
+            self.emit(&format!("  mov %rax, -{}(%rbp)", dst_offset));
         }
 
         for stmt in &func.body {
@@ -373,24 +380,45 @@ impl Codegen {
                 }
             }
             Expr::FuncCall { name, args } => {
-                // Evaluate args and push results onto stack
-                for arg in args.iter() {
-                    self.gen_expr(arg);
-                    self.push();
-                }
-                // Pop args into registers (reverse order)
-                let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
-                for i in (0..args.len()).rev() {
-                    self.pop(arg_regs[i]);
-                }
-                // Align stack to 16 bytes before call
-                let needs_align = self.stack_depth % 2 != 0;
+                let num_stack_args = if args.len() > 6 { args.len() - 6 } else { 0 };
+
+                // Align BEFORE pushing stack args so callee sees them at correct offsets
+                let needs_align = (self.stack_depth + num_stack_args) % 2 != 0;
                 if needs_align {
                     self.emit("  sub $8, %rsp");
+                    self.stack_depth += 1;
                 }
+
+                // Push stack arguments (7th and beyond) in reverse order
+                for i in (6..args.len()).rev() {
+                    self.gen_expr(&args[i]);
+                    self.push();
+                }
+
+                // Evaluate first 6 register arguments, push then pop into registers
+                let reg_count = std::cmp::min(args.len(), 6);
+                for i in 0..reg_count {
+                    self.gen_expr(&args[i]);
+                    self.push();
+                }
+                let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+                for i in (0..reg_count).rev() {
+                    self.pop(arg_regs[i]);
+                }
+
+                // Call (stack is already aligned)
                 self.emit(&format!("  call {}", name));
+
+                // Clean up stack arguments
+                if num_stack_args > 0 {
+                    self.emit(&format!("  add ${}, %rsp", num_stack_args * 8));
+                    self.stack_depth -= num_stack_args;
+                }
+
+                // Clean up alignment padding
                 if needs_align {
                     self.emit("  add $8, %rsp");
+                    self.stack_depth -= 1;
                 }
             }
             Expr::BinOp { op, lhs, rhs } => {
