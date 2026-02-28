@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast::{BinOp, Expr, Function, Program, Stmt, UnaryOp};
 use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
-use crate::types::Type;
+use crate::types::{StructMember, Type};
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
@@ -47,7 +47,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct)
     }
 
     fn is_function(&self) -> bool {
@@ -146,6 +146,40 @@ impl<'a> Parser<'a> {
             TokenKind::Bool => {
                 self.advance();
                 Type::bool_type()
+            }
+            TokenKind::Struct => {
+                self.advance();
+                self.expect(TokenKind::LBrace);
+                let mut members = Vec::new();
+                let mut offset = 0;
+                while self.current().kind != TokenKind::RBrace {
+                    let mem_ty = self.parse_type();
+                    let mem_name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected member name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::Semicolon);
+                    // Align offset to member alignment
+                    let align = mem_ty.align();
+                    offset = (offset + align - 1) & !(align - 1);
+                    members.push(StructMember {
+                        name: mem_name,
+                        ty: mem_ty.clone(),
+                        offset,
+                    });
+                    offset += mem_ty.size();
+                }
+                self.expect(TokenKind::RBrace);
+                Type {
+                    kind: crate::types::TypeKind::Struct(members),
+                    is_unsigned: false,
+                }
             }
             _ => {
                 if is_unsigned {
@@ -438,7 +472,7 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct => {
                 self.var_decl()
             }
             _ => {
@@ -951,6 +985,20 @@ impl<'a> Parser<'a> {
                         lhs: Box::new(node),
                         rhs: Box::new(index),
                     }));
+                }
+                TokenKind::Dot => {
+                    self.advance();
+                    let member_name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected member name after '.'",
+                            );
+                        }
+                    };
+                    self.advance();
+                    node = Expr::Member(Box::new(node), member_name);
                 }
                 TokenKind::PlusPlus => {
                     self.advance();

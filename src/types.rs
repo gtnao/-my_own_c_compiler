@@ -1,3 +1,11 @@
+/// Struct member with name, type, and byte offset.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructMember {
+    pub name: String,
+    pub ty: Type,
+    pub offset: usize,
+}
+
 /// Base type kind.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
@@ -9,6 +17,7 @@ pub enum TypeKind {
     Long,
     Ptr(Box<Type>),
     Array(Box<Type>, usize),
+    Struct(Vec<StructMember>),
 }
 
 /// Type representation with signedness.
@@ -64,6 +73,16 @@ impl Type {
             TypeKind::Long => 8,
             TypeKind::Ptr(_) => 8,
             TypeKind::Array(base, len) => base.size() * len,
+            TypeKind::Struct(members) => {
+                if members.is_empty() {
+                    return 0;
+                }
+                let last = &members[members.len() - 1];
+                let raw_size = last.offset + last.ty.size();
+                let align = self.align();
+                // Align total size to struct alignment
+                (raw_size + align - 1) & !(align - 1)
+            }
         }
     }
 
@@ -78,6 +97,9 @@ impl Type {
             TypeKind::Long => 8,
             TypeKind::Ptr(_) => 8,
             TypeKind::Array(base, _) => base.align(),
+            TypeKind::Struct(members) => {
+                members.iter().map(|m| m.ty.align()).max().unwrap_or(1)
+            }
         }
     }
 

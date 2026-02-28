@@ -131,8 +131,8 @@ impl Codegen {
                 TypeKind::Long | TypeKind::Ptr(_) => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
-                TypeKind::Array(_, _) => {
-                    // Array params treated as pointers
+                TypeKind::Array(_, _) | TypeKind::Struct(_) => {
+                    // Array/struct params treated as pointers (8 bytes)
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
                 TypeKind::Void => {}
@@ -336,7 +336,7 @@ impl Codegen {
                     Expr::Var(name) => {
                         self.emit_store_var(name);
                     }
-                    Expr::Deref(_) => {
+                    Expr::Deref(_) | Expr::Member(_, _) => {
                         self.push(); // save rhs value
                         self.gen_addr(lhs);
                         self.emit("  mov %rax, %rdi"); // address in %rdi
@@ -495,6 +495,11 @@ impl Codegen {
                 let ty = self.expr_type(expr);
                 self.emit(&format!("  mov ${}, %rax", ty.size()));
             }
+            Expr::Member(_, _) => {
+                self.gen_addr(expr);
+                let ty = self.expr_type(expr);
+                self.emit_load_indirect(&ty);
+            }
             Expr::StrLit(s) => {
                 let idx = self.string_literals.len();
                 self.string_literals.push(s.clone());
@@ -515,7 +520,7 @@ impl Codegen {
                     TypeKind::Short => self.emit("  movswq %ax, %rax"),
                     TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
                     TypeKind::Int => self.emit("  movslq %eax, %rax"),
-                    TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) => {} // no-op
+                    TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) | TypeKind::Struct(_) => {} // no-op
                 }
             }
             Expr::BinOp { op, lhs, rhs } => {
@@ -645,6 +650,16 @@ impl Codegen {
                 // Address of *p is just the value of p
                 self.gen_expr(inner);
             }
+            Expr::Member(base, name) => {
+                self.gen_addr(base);
+                let base_ty = self.expr_type(base);
+                if let TypeKind::Struct(members) = &base_ty.kind {
+                    let member = members.iter().find(|m| m.name == *name).unwrap();
+                    if member.offset > 0 {
+                        self.emit(&format!("  add ${}, %rax", member.offset));
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -665,6 +680,16 @@ impl Codegen {
                 Type::ptr_to(inner_ty)
             }
             Expr::StrLit(_) => Type::ptr_to(Type::char_type()),
+            Expr::Member(base, name) => {
+                let base_ty = self.expr_type(base);
+                if let TypeKind::Struct(members) = &base_ty.kind {
+                    members.iter().find(|m| m.name == *name)
+                        .map(|m| m.ty.clone())
+                        .unwrap_or(Type::int_type())
+                } else {
+                    Type::int_type()
+                }
+            }
             Expr::BinOp { op, lhs, rhs } => {
                 let lhs_ty = self.expr_type(lhs);
                 let rhs_ty = self.expr_type(rhs);
@@ -756,8 +781,8 @@ impl Codegen {
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl {}(%rip), %eax", name)),
                 TypeKind::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov {}(%rip), %rax", name)),
-                TypeKind::Array(_, _) => {
-                    // Array-to-pointer decay: load address of the array
+                TypeKind::Array(_, _) | TypeKind::Struct(_) => {
+                    // Array-to-pointer decay / struct address: load address
                     self.emit(&format!("  lea {}(%rip), %rax", name));
                 }
                 TypeKind::Void => {}
@@ -773,8 +798,8 @@ impl Codegen {
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl -{}(%rbp), %eax", offset)),
                 TypeKind::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
-                TypeKind::Array(_, _) => {
-                    // Array-to-pointer decay: load address of the array
+                TypeKind::Array(_, _) | TypeKind::Struct(_) => {
+                    // Array-to-pointer decay / struct address: load address
                     self.emit(&format!("  lea -{}(%rbp), %rax", offset));
                 }
                 TypeKind::Void => {}
@@ -795,7 +820,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, {}(%rip)", name)),
-                TypeKind::Array(_, _) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
@@ -804,7 +829,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
-                TypeKind::Array(_, _) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
             }
         }
     }
@@ -822,7 +847,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
-                TypeKind::Array(_, _) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
@@ -831,7 +856,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
-                TypeKind::Array(_, _) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
             }
         }
     }

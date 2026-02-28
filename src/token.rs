@@ -24,6 +24,7 @@ pub enum TokenKind {
     Sizeof,
     Unsigned,
     Bool,
+    Struct,
     // Operators
     Plus,
     PlusPlus,
@@ -55,6 +56,7 @@ pub enum TokenKind {
     Ge,
     Question,
     Colon,
+    Dot,
     Comma,
     LParen,
     RParen,

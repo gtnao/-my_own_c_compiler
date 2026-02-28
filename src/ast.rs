@@ -69,6 +69,7 @@ pub enum Expr {
     Addr(Box<Expr>),
     Deref(Box<Expr>),
     StrLit(Vec<u8>),
+    Member(Box<Expr>, String),
 }
 
 #[derive(Debug, Clone, PartialEq)]

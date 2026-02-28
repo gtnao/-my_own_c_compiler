@@ -331,6 +331,18 @@ assert 0 'int main() { char *s = "hel" "lo"; return s[5]; }'
 assert 97 'int main() { char *s = "a" "b" "c"; return s[0]; }'
 assert 99 'int main() { char *s = "a" "b" "c"; return s[2]; }'
 
+# Step 7.1: struct definition and member access
+assert 3 'int main() { struct { int x; int y; } s; s.x = 1; s.y = 2; return s.x + s.y; }'
+assert 10 'int main() { struct { int x; int y; } s; s.x = 10; return s.x; }'
+assert 20 'int main() { struct { int x; int y; } s; s.y = 20; return s.y; }'
+assert 8 'int main() { return sizeof(struct { int x; int y; }); }'
+assert 5 'int main() { struct { int a; int b; int c; } s; s.a = 1; s.b = 2; s.c = 2; return s.a + s.b + s.c; }'
+assert 1 'int main() { struct { char a; int b; } s; s.a = 1; return s.a; }'
+assert 42 'int main() { struct { char a; int b; } s; s.b = 42; return s.b; }'
+assert 8 'int main() { return sizeof(struct { char a; int b; }); }'
+assert 3 'int main() { struct { int x; } s; s.x = 3; int *p = &s.x; return *p; }'
+assert 7 'int main() { struct { int a; int b; } s; s.a = 3; s.b = 4; int *p = &s.b; return s.a + *p; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
