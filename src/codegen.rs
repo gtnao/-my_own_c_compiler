@@ -453,6 +453,16 @@ impl Codegen {
                     self.stack_depth -= 1;
                 }
             }
+            Expr::Cast { ty, expr } => {
+                self.gen_expr(expr);
+                // Truncate and re-extend to target type
+                match ty {
+                    Type::Char => self.emit("  movsbq %al, %rax"),
+                    Type::Short => self.emit("  movswq %ax, %rax"),
+                    Type::Int => self.emit("  movslq %eax, %rax"),
+                    Type::Long | Type::Void => {} // no-op
+                }
+            }
             Expr::BinOp { op, lhs, rhs } => {
                 self.gen_expr(rhs);
                 self.push();

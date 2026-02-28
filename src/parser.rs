@@ -803,7 +803,23 @@ impl<'a> Parser<'a> {
                 let operand = self.unary();
                 Expr::PreDec(Box::new(operand))
             }
-            _ => self.postfix(),
+            _ => {
+                // Cast expression: "(" type ")" unary
+                if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && Self::is_type_keyword(&self.tokens[self.pos + 1].kind)
+                {
+                    self.advance(); // consume "("
+                    let ty = self.parse_type();
+                    self.expect(TokenKind::RParen);
+                    let operand = self.unary();
+                    return Expr::Cast {
+                        ty,
+                        expr: Box::new(operand),
+                    };
+                }
+                self.postfix()
+            }
         }
     }
 

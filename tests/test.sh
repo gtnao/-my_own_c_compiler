@@ -219,6 +219,14 @@ assert 0 'int main() { int a = 256; char b = a; return b; }'
 assert 7 'int main() { short a = 3; long b = 4; return a + b; }'
 assert 1 'int main() { char a = 1; short b = 2; int c = 3; long d = 4; return a + b + c + d - 9; }'
 
+# Step 4.5: explicit cast
+assert 0 'int main() { return (char)256; }'
+assert 97 'int main() { return (char)97; }'
+assert 1 'int main() { int a = 257; return (char)a; }'
+assert 0 'int main() { return (short)65536; }'
+assert 42 'int main() { return (int)42; }'
+assert 42 'int main() { return (long)42; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
