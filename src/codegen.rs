@@ -381,6 +381,11 @@ impl Codegen {
                 let label = self.get_or_create_goto_label(name);
                 self.emit(&format!("  jmp {}", label));
             }
+            Stmt::GotoExpr(expr) => {
+                // Computed goto: goto *expr — jump to address in expr
+                self.gen_expr(expr);
+                self.emit("  jmp *%rax");
+            }
             Stmt::Label { name, stmt } => {
                 let label = self.get_or_create_goto_label(name);
                 self.emit(&format!("{}:", label));
@@ -961,6 +966,11 @@ impl Codegen {
                 for s in stmts {
                     self.gen_stmt(s);
                 }
+            }
+            Expr::LabelAddr(label) => {
+                // &&label — load address of label into %rax
+                let asm_label = self.get_or_create_goto_label(label);
+                self.emit(&format!("  lea {}(%rip), %rax", asm_label));
             }
         }
     }

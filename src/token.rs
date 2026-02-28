@@ -48,6 +48,8 @@ pub enum TokenKind {
     Extension,
     Register,
     Restrict,
+    Asm,
+    ThreadLocal,
     // Operators
     Plus,
     PlusPlus,

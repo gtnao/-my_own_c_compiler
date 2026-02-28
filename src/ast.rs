@@ -84,6 +84,7 @@ pub enum Expr {
         ty: Type,
     },
     StmtExpr(Vec<Stmt>),
+    LabelAddr(String),  // &&label — address of label (GCC extension)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -123,6 +124,7 @@ pub enum Stmt {
     Break,
     Continue,
     Goto(String),
+    GotoExpr(Expr),  // goto *expr — computed goto (GCC extension)
     Label {
         name: String,
         stmt: Box<Stmt>,

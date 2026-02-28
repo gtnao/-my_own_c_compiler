@@ -770,7 +770,7 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> Type {
         // Skip __attribute__ and inline before type
         self.skip_attribute();
-        while matches!(self.current().kind, TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Auto) {
+        while matches!(self.current().kind, TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Auto | TokenKind::ThreadLocal) {
             self.advance();
         }
         self.skip_attribute();
@@ -1350,20 +1350,57 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::Semicolon);
                 Stmt::Continue
             }
+            TokenKind::Asm => {
+                // Skip inline assembly: asm/volatile (...);
+                self.advance();
+                // Skip optional "volatile" or "__volatile__" qualifier
+                if let TokenKind::Ident(ref s) = self.current().kind {
+                    if s == "volatile" || s == "__volatile__" {
+                        self.advance();
+                    }
+                }
+                if self.current().kind == TokenKind::Volatile {
+                    self.advance();
+                }
+                // Skip balanced parentheses
+                if self.current().kind == TokenKind::LParen {
+                    self.advance();
+                    let mut depth = 1;
+                    while depth > 0 {
+                        match self.current().kind {
+                            TokenKind::LParen => depth += 1,
+                            TokenKind::RParen => depth -= 1,
+                            TokenKind::Eof => break,
+                            _ => {}
+                        }
+                        self.advance();
+                    }
+                }
+                self.expect(TokenKind::Semicolon);
+                Stmt::Block(vec![]) // no-op
+            }
             TokenKind::Goto => {
                 self.advance();
-                let name = match &self.current().kind {
-                    TokenKind::Ident(s) => s.clone(),
-                    _ => {
-                        self.reporter.error_at(
-                            self.current().pos,
-                            "expected label name after goto",
-                        );
-                    }
-                };
-                self.advance();
-                self.expect(TokenKind::Semicolon);
-                Stmt::Goto(name)
+                if self.current().kind == TokenKind::Star {
+                    // Computed goto: goto *expr;
+                    self.advance();
+                    let expr = self.expr();
+                    self.expect(TokenKind::Semicolon);
+                    Stmt::GotoExpr(expr)
+                } else {
+                    let name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected label name after goto",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::Semicolon);
+                    Stmt::Goto(name)
+                }
             }
             TokenKind::LBrace => {
                 self.advance();
@@ -2312,6 +2349,21 @@ impl<'a> Parser<'a> {
                     operand: Box::new(operand),
                 }
             }
+            TokenKind::AmpAmp => {
+                // &&label — address of label (GCC extension)
+                self.advance();
+                let label = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected label name after &&",
+                        );
+                    }
+                };
+                self.advance();
+                Expr::LabelAddr(label)
+            }
             TokenKind::Amp => {
                 self.advance();
                 let operand = self.unary();
@@ -2687,6 +2739,70 @@ impl<'a> Parser<'a> {
                     self.expect(TokenKind::RParen);
                     let compatible = ty1.kind == ty2.kind && ty1.is_unsigned == ty2.is_unsigned;
                     return Expr::Num(if compatible { 1 } else { 0 });
+                }
+
+                // __builtin_choose_expr(const_expr, expr1, expr2) → expr1 if const_expr != 0, else expr2
+                if name == "__builtin_choose_expr" {
+                    self.expect(TokenKind::LParen);
+                    let cond = self.eval_const_expr();
+                    self.expect(TokenKind::Comma);
+                    let expr1 = self.assign();
+                    self.expect(TokenKind::Comma);
+                    let expr2 = self.assign();
+                    self.expect(TokenKind::RParen);
+                    return if cond != 0 { expr1 } else { expr2 };
+                }
+
+                // __builtin_trap() → calls abort
+                if name == "__builtin_trap" {
+                    self.expect(TokenKind::LParen);
+                    self.expect(TokenKind::RParen);
+                    return Expr::FuncCall { name: "abort".to_string(), args: vec![] };
+                }
+
+                // __builtin_clz, __builtin_ctz, __builtin_popcount, __builtin_bswap*
+                // → emit as regular function calls to GCC builtins (linked via libgcc)
+                if name == "__builtin_clz" || name == "__builtin_ctz"
+                    || name == "__builtin_clzl" || name == "__builtin_ctzl"
+                    || name == "__builtin_clzll" || name == "__builtin_ctzll"
+                    || name == "__builtin_popcount" || name == "__builtin_popcountl" || name == "__builtin_popcountll"
+                    || name == "__builtin_bswap16" || name == "__builtin_bswap32" || name == "__builtin_bswap64"
+                    || name == "__builtin_ffs" || name == "__builtin_ffsl" || name == "__builtin_ffsll"
+                    || name == "__builtin_abs"
+                {
+                    self.expect(TokenKind::LParen);
+                    let mut args = Vec::new();
+                    if self.current().kind != TokenKind::RParen {
+                        args.push(self.assign());
+                        while self.current().kind == TokenKind::Comma {
+                            self.advance();
+                            args.push(self.assign());
+                        }
+                    }
+                    self.expect(TokenKind::RParen);
+                    return Expr::FuncCall { name, args };
+                }
+
+                // __builtin_classify_type(expr) → always 0
+                if name == "__builtin_classify_type" {
+                    self.expect(TokenKind::LParen);
+                    let _expr = self.assign();
+                    self.expect(TokenKind::RParen);
+                    return Expr::Num(0);
+                }
+
+                // __builtin_huge_val() → 0 (simplified, not used for code gen)
+                if name == "__builtin_huge_val" || name == "__builtin_inf"
+                    || name == "__builtin_huge_valf" || name == "__builtin_inff"
+                    || name == "__builtin_nan" || name == "__builtin_nanf"
+                {
+                    self.expect(TokenKind::LParen);
+                    // Skip arguments if any
+                    if self.current().kind != TokenKind::RParen {
+                        self.assign();
+                    }
+                    self.expect(TokenKind::RParen);
+                    return Expr::Num(0);
                 }
 
                 // Function call: ident "(" args ")"

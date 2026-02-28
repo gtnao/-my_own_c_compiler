@@ -103,6 +103,11 @@ impl<'a> Lexer<'a> {
                     "restrict" => TokenKind::Restrict,
                     "__restrict" => TokenKind::Restrict,
                     "__restrict__" => TokenKind::Restrict,
+                    "asm" => TokenKind::Asm,
+                    "__asm" => TokenKind::Asm,
+                    "__asm__" => TokenKind::Asm,
+                    "_Thread_local" => TokenKind::ThreadLocal,
+                    "__thread" => TokenKind::ThreadLocal,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

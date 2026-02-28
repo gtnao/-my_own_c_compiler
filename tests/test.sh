@@ -998,6 +998,19 @@ assert 99 'int main() { struct { struct { int x; int y; }; int z; } s; s.x = 99;
 assert 7 'int apply(int (*)(int, int), int, int); int apply(int (*f)(int, int), int a, int b) { return f(a, b); } int add(int a, int b) { return a+b; } int main() { return apply(add, 3, 4); }'
 assert 5 'int foo(int, int); int foo(int a, int b) { return a+b; } int main() { return foo(2,3); }'
 
+# Phase 18: GCC extensions
+# Step 18.2: Statement expressions
+assert 7 'int main() { int x = ({ int a = 3; int b = 4; a + b; }); return x; }'
+# Step 18.3: __builtin_choose_expr
+assert 10 'int main() { return __builtin_choose_expr(1, 10, 20); }'
+assert 20 'int main() { return __builtin_choose_expr(0, 10, 20); }'
+# Step 18.4: Inline assembly (skip)
+assert 42 'int main() { int x = 42; __asm__ volatile("" : : : "memory"); return x; }'
+assert 42 'int main() { int x = 42; asm(""); return x; }'
+
+# Step 18.5: Computed goto
+assert 42 'int main() { void *p = &&target; goto *p; return 1; target: return 42; }'
+
 # Cross-header inclusion test
 assert 0 '#include <stdio.h>
 #include <stdlib.h>
