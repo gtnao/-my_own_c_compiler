@@ -34,6 +34,7 @@ impl<'a> Lexer<'a> {
                 let kind = match word.as_str() {
                     "return" => TokenKind::Return,
                     "int" => TokenKind::Int,
+                    "char" => TokenKind::Char,
                     "if" => TokenKind::If,
                     "else" => TokenKind::Else,
                     "while" => TokenKind::While,

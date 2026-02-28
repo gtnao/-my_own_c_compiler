@@ -5,7 +5,8 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Void,
-    Int, // 8 bytes (64-bit) for now
+    Char, // 1 byte, signed
+    Int,  // 8 bytes (64-bit) for now
 }
 
 impl Type {
@@ -13,6 +14,7 @@ impl Type {
     pub fn size(&self) -> usize {
         match self {
             Type::Void => 0,
+            Type::Char => 1,
             Type::Int => 8,
         }
     }
@@ -21,6 +23,7 @@ impl Type {
     pub fn align(&self) -> usize {
         match self {
             Type::Void => 1,
+            Type::Char => 1,
             Type::Int => 8,
         }
     }

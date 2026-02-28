@@ -195,6 +195,14 @@ assert 2 'int main() { goto end; return 1; end: return 2; }'
 assert 10 'int main() { int i = 0; loop: i++; if (i < 10) goto loop; return i; }'
 assert 55 'int main() { int s = 0; int i; for (i = 1; i <= 10; i++) { s += i; if (i == 10) continue; } return s; }'
 
+# Step 4.2: char type
+assert 65 'int main() { char a = 65; return a; }'
+assert 3 'int main() { char a = 1; char b = 2; return a + b; }'
+assert 65 'char g; int main() { g = 65; return g; }'
+assert 97 'int foo(char a) { return a; } int main() { return foo(97); }'
+assert 0 'int main() { char a = 0; return a; }'
+assert 255 'int main() { char a = 255; return a & 255; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

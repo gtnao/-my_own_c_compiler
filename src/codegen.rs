@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 pub struct Codegen {
     output: String,
     locals: HashMap<String, usize>,
+    local_types: HashMap<String, Type>,
     stack_size: usize,
     label_count: usize,
     break_labels: Vec<String>,
@@ -21,6 +22,7 @@ impl Codegen {
         Self {
             output: String::new(),
             locals: HashMap::new(),
+            local_types: HashMap::new(),
             stack_size: 0,
             label_count: 0,
             break_labels: Vec::new(),
@@ -68,11 +70,17 @@ impl Codegen {
 
         // Set up local variable offsets on stack using type sizes
         self.locals.clear();
+        self.local_types.clear();
         self.goto_labels.clear();
         let mut offset = 0;
         for (ty, name) in &func.locals {
-            offset += ty.size();
+            let size = ty.size();
+            let align = ty.align();
+            // Align offset before placing variable
+            offset = (offset + align - 1) & !(align - 1);
+            offset += size;
             self.locals.insert(name.clone(), offset);
+            self.local_types.insert(name.clone(), ty.clone());
         }
         self.stack_size = offset;
         // Align stack to 16 bytes
@@ -89,10 +97,19 @@ impl Codegen {
         }
 
         // Store register parameters to stack (first 6)
-        let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
-        for (i, (_ty, param)) in func.params.iter().enumerate().take(6) {
+        let arg_regs_64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+        let arg_regs_8 = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
+        for (i, (ty, param)) in func.params.iter().enumerate().take(6) {
             let offset = self.locals[param];
-            self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs[i], offset));
+            match ty {
+                Type::Char => {
+                    self.emit(&format!("  movb {}, -{}(%rbp)", arg_regs_8[i], offset));
+                }
+                Type::Int => {
+                    self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
+                }
+                Type::Void => {}
+            }
         }
         // Copy stack parameters to local slots (7th and beyond)
         for (i, (_ty, param)) in func.params.iter().enumerate().skip(6) {
@@ -285,23 +302,13 @@ impl Codegen {
                 self.emit(&format!("  mov ${}, %rax", val));
             }
             Expr::Var(name) => {
-                if self.globals.contains(name) {
-                    self.emit(&format!("  mov {}(%rip), %rax", name));
-                } else {
-                    let offset = self.locals[name];
-                    self.emit(&format!("  mov -{}(%rbp), %rax", offset));
-                }
+                self.emit_load_var(name);
             }
             Expr::Assign { lhs, rhs } => {
                 self.gen_expr(rhs);
                 match lhs.as_ref() {
                     Expr::Var(name) => {
-                        if self.globals.contains(name) {
-                            self.emit(&format!("  mov %rax, {}(%rip)", name));
-                        } else {
-                            let offset = self.locals[name];
-                            self.emit(&format!("  mov %rax, -{}(%rbp)", offset));
-                        }
+                        self.emit_store_var(name);
                     }
                     _ => {}
                 }
@@ -372,7 +379,6 @@ impl Codegen {
                 self.emit(&format!("{}:", end_label));
             }
             Expr::PreInc(operand) => {
-                // ++a: increment a, return new value
                 if let Expr::Var(name) = operand.as_ref() {
                     self.emit_load_var(name);
                     self.emit("  add $1, %rax");
@@ -380,7 +386,6 @@ impl Codegen {
                 }
             }
             Expr::PreDec(operand) => {
-                // --a: decrement a, return new value
                 if let Expr::Var(name) = operand.as_ref() {
                     self.emit_load_var(name);
                     self.emit("  sub $1, %rax");
@@ -388,29 +393,24 @@ impl Codegen {
                 }
             }
             Expr::PostInc(operand) => {
-                // a++: return old value, then increment a
                 if let Expr::Var(name) = operand.as_ref() {
                     self.emit_load_var(name);
                     self.emit("  mov %rax, %rdi");
                     self.emit("  add $1, %rdi");
                     self.emit_store_var_from_rdi(name);
-                    // %rax still holds old value
                 }
             }
             Expr::PostDec(operand) => {
-                // a--: return old value, then decrement a
                 if let Expr::Var(name) = operand.as_ref() {
                     self.emit_load_var(name);
                     self.emit("  mov %rax, %rdi");
                     self.emit("  sub $1, %rdi");
                     self.emit_store_var_from_rdi(name);
-                    // %rax still holds old value
                 }
             }
             Expr::FuncCall { name, args } => {
                 let num_stack_args = if args.len() > 6 { args.len() - 6 } else { 0 };
 
-                // Align BEFORE pushing stack args so callee sees them at correct offsets
                 let needs_align = (self.stack_depth + num_stack_args) % 2 != 0;
                 if needs_align {
                     self.emit("  sub $8, %rsp");
@@ -423,7 +423,7 @@ impl Codegen {
                     self.push();
                 }
 
-                // Evaluate first 6 register arguments, push then pop into registers
+                // Evaluate first 6 register arguments
                 let reg_count = std::cmp::min(args.len(), 6);
                 for i in 0..reg_count {
                     self.gen_expr(&args[i]);
@@ -434,23 +434,19 @@ impl Codegen {
                     self.pop(arg_regs[i]);
                 }
 
-                // Call (stack is already aligned)
                 self.emit(&format!("  call {}", name));
 
-                // Clean up stack arguments
                 if num_stack_args > 0 {
                     self.emit(&format!("  add ${}, %rsp", num_stack_args * 8));
                     self.stack_depth -= num_stack_args;
                 }
 
-                // Clean up alignment padding
                 if needs_align {
                     self.emit("  add $8, %rsp");
                     self.stack_depth -= 1;
                 }
             }
             Expr::BinOp { op, lhs, rhs } => {
-                // Evaluate rhs first, push it, then evaluate lhs
                 self.gen_expr(rhs);
                 self.push();
                 self.gen_expr(lhs);
@@ -537,30 +533,68 @@ impl Codegen {
         }
     }
 
+    /// Get the type of a variable (local or global).
+    fn get_var_type(&self, name: &str) -> &Type {
+        if let Some(ty) = self.local_types.get(name) {
+            return ty;
+        }
+        if let Some(ty) = self.global_types.get(name) {
+            return ty;
+        }
+        &Type::Int
+    }
+
     fn emit_load_var(&mut self, name: &str) {
+        let ty = self.get_var_type(name).clone();
         if self.globals.contains(name) {
-            self.emit(&format!("  mov {}(%rip), %rax", name));
+            match ty {
+                Type::Char => self.emit(&format!("  movsbq {}(%rip), %rax", name)),
+                Type::Int => self.emit(&format!("  mov {}(%rip), %rax", name)),
+                Type::Void => {}
+            }
         } else {
             let offset = self.locals[name];
-            self.emit(&format!("  mov -{}(%rbp), %rax", offset));
+            match ty {
+                Type::Char => self.emit(&format!("  movsbq -{}(%rbp), %rax", offset)),
+                Type::Int => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
+                Type::Void => {}
+            }
         }
     }
 
     fn emit_store_var(&mut self, name: &str) {
+        let ty = self.get_var_type(name).clone();
         if self.globals.contains(name) {
-            self.emit(&format!("  mov %rax, {}(%rip)", name));
+            match ty {
+                Type::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
+                Type::Int => self.emit(&format!("  mov %rax, {}(%rip)", name)),
+                Type::Void => {}
+            }
         } else {
             let offset = self.locals[name];
-            self.emit(&format!("  mov %rax, -{}(%rbp)", offset));
+            match ty {
+                Type::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
+                Type::Int => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
+                Type::Void => {}
+            }
         }
     }
 
     fn emit_store_var_from_rdi(&mut self, name: &str) {
+        let ty = self.get_var_type(name).clone();
         if self.globals.contains(name) {
-            self.emit(&format!("  mov %rdi, {}(%rip)", name));
+            match ty {
+                Type::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
+                Type::Int => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
+                Type::Void => {}
+            }
         } else {
             let offset = self.locals[name];
-            self.emit(&format!("  mov %rdi, -{}(%rbp)", offset));
+            match ty {
+                Type::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
+                Type::Int => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
+                Type::Void => {}
+            }
         }
     }
 
@@ -626,5 +660,31 @@ mod tests {
         assert!(output.contains("sub $16, %rsp"));
         assert!(output.contains("mov %rax, -8(%rbp)"));
         assert!(output.contains("mov -8(%rbp), %rax"));
+    }
+
+    #[test]
+    fn test_char_var() {
+        let mut codegen = Codegen::new();
+        let program = Program {
+            globals: vec![],
+            functions: vec![Function {
+                name: "main".to_string(),
+                return_ty: Type::Int,
+                params: vec![],
+                body: vec![
+                    Stmt::VarDecl {
+                        name: "a".to_string(),
+                        ty: Type::Char,
+                        init: Some(Expr::Num(65)),
+                    },
+                    Stmt::Return(Some(Expr::Var("a".to_string()))),
+                ],
+                locals: vec![(Type::Char, "a".to_string())],
+            }],
+        };
+        let output = codegen.generate(&program);
+        // char uses movb for store and movsbq for load
+        assert!(output.contains("movb %al, -1(%rbp)"));
+        assert!(output.contains("movsbq -1(%rbp), %rax"));
     }
 }

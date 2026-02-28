@@ -46,11 +46,13 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn is_type_keyword(kind: &TokenKind) -> bool {
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Void)
+    }
+
     fn is_function(&self) -> bool {
         // type ident "(" → function/prototype
-        if self.tokens[self.pos].kind == TokenKind::Int
-            || self.tokens[self.pos].kind == TokenKind::Void
-        {
+        if Self::is_type_keyword(&self.tokens[self.pos].kind) {
             if let TokenKind::Ident(_) = &self.tokens[self.pos + 1].kind {
                 return self.tokens[self.pos + 2].kind == TokenKind::LParen;
             }
@@ -81,6 +83,10 @@ impl<'a> Parser<'a> {
             TokenKind::Int => {
                 self.advance();
                 Type::Int
+            }
+            TokenKind::Char => {
+                self.advance();
+                Type::Char
             }
             TokenKind::Void => {
                 self.advance();
@@ -226,7 +232,7 @@ impl<'a> Parser<'a> {
                 let init = if self.current().kind == TokenKind::Semicolon {
                     self.advance();
                     None
-                } else if self.current().kind == TokenKind::Int {
+                } else if Self::is_type_keyword(&self.current().kind) && self.current().kind != TokenKind::Void {
                     Some(Box::new(self.var_decl()))
                 } else {
                     let expr = self.expr();
@@ -364,7 +370,7 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
-            TokenKind::Int => {
+            TokenKind::Int | TokenKind::Char => {
                 self.var_decl()
             }
             _ => {
