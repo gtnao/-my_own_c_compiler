@@ -23,6 +23,7 @@ pub enum TokenKind {
     Continue,
     Goto,
     Sizeof,
+    Signed,
     Unsigned,
     Bool,
     Struct,

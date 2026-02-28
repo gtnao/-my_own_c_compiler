@@ -76,6 +76,7 @@ impl<'a> Lexer<'a> {
                     "typedef" => TokenKind::Typedef,
                     "static" => TokenKind::Static,
                     "extern" => TokenKind::Extern,
+                    "signed" => TokenKind::Signed,
                     "unsigned" => TokenKind::Unsigned,
                     "void" => TokenKind::Void,
                     "const" => TokenKind::Const,

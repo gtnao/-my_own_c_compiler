@@ -108,7 +108,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -512,10 +512,17 @@ impl<'a> Parser<'a> {
                 self.advance();
             }
         }
+        // Handle signed/unsigned specifiers
+        let mut has_signedness = false;
         let is_unsigned = if self.current().kind == TokenKind::Unsigned {
             self.advance();
+            has_signedness = true;
             true
         } else {
+            if self.current().kind == TokenKind::Signed {
+                self.advance();
+                has_signedness = true;
+            }
             false
         };
 
@@ -618,6 +625,9 @@ impl<'a> Parser<'a> {
                 if is_unsigned {
                     // bare "unsigned" = "unsigned int"
                     Type::uint()
+                } else if has_signedness {
+                    // bare "signed" = "signed int" = "int"
+                    Type::int_type()
                 } else if let TokenKind::Ident(name) = &self.current().kind {
                     if name == "va_list" {
                         // va_list is treated as char* (pointer to register save area)
@@ -1009,7 +1019,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline => {
                 self.var_decl()
             }
             _ => {

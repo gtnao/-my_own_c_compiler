@@ -731,6 +731,13 @@ assert 16 'int main() { return 0x10; }'
 assert 10 'int main() { return 0x0A; }'
 assert 15 'int main() { return 0xf; }'
 
+# Step 14.6: signed keyword
+assert 5 'int main() { signed int a = 5; return a; }'
+assert 3 'int main() { signed char c = 3; return c; }'
+assert 7 'int main() { signed a = 7; return a; }'
+assert 10 'int main() { signed short s = 10; return s; }'
+assert 42 'int main() { signed long l = 42; return l; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
