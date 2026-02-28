@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 #[derive(Clone)]
 enum MacroDef {
     Object(String),                         // #define NAME value
-    Function(Vec<String>, String),          // #define NAME(params) body
+    Function(Vec<String>, String, bool),    // #define NAME(params) body, is_variadic
 }
 
 /// Simple preprocessor that handles #include, #define directives.
@@ -142,12 +142,17 @@ fn preprocess_recursive(
                 // Function-like macro: #define NAME(a, b) body
                 let paren_end = after_name.find(')').unwrap_or(after_name.len());
                 let params_str = &after_name[1..paren_end];
-                let params: Vec<String> = params_str.split(',')
+                let mut params: Vec<String> = params_str.split(',')
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
+                // Check for variadic: last param is "..."
+                let is_variadic = params.last().map_or(false, |p| p == "...");
+                if is_variadic {
+                    params.pop(); // remove "..."
+                }
                 let body = after_name[paren_end + 1..].trim().to_string();
-                macros.insert(name.to_string(), MacroDef::Function(params, body));
+                macros.insert(name.to_string(), MacroDef::Function(params, body, is_variadic));
             } else {
                 // Object-like macro: #define NAME value
                 let value = after_name.trim().to_string();
@@ -202,7 +207,7 @@ fn expand_macros(line: &str, macros: &HashMap<String, MacroDef>) -> String {
                         let expanded = expand_macros(&value, macros);
                         result.push_str(&expanded);
                     }
-                    MacroDef::Function(params, body) => {
+                    MacroDef::Function(params, body, is_variadic) => {
                         // Check for '(' immediately after identifier
                         let mut j = i;
                         while j < bytes.len() && bytes[j].is_ascii_whitespace() {
@@ -220,8 +225,23 @@ fn expand_macros(line: &str, macros: &HashMap<String, MacroDef>) -> String {
                                 j += 1;
                             }
                             i = j;
+                            // For variadic macros, collect extra args as __VA_ARGS__
+                            let mut subst_params = params.clone();
+                            let mut subst_args = args.clone();
+                            if is_variadic {
+                                // Collect args beyond named params as __VA_ARGS__
+                                let va_args = if args.len() > params.len() {
+                                    args[params.len()..].join(", ")
+                                } else {
+                                    String::new()
+                                };
+                                subst_params.push("__VA_ARGS__".to_string());
+                                // Trim subst_args to just the named params
+                                subst_args.truncate(params.len());
+                                subst_args.push(va_args);
+                            }
                             // Substitute parameters in body
-                            let substituted = substitute_params(&body, &params, &args);
+                            let substituted = substitute_params(&body, &subst_params, &subst_args);
                             let expanded = expand_macros(&substituted, macros);
                             result.push_str(&expanded);
                         } else {

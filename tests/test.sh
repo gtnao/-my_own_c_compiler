@@ -881,6 +881,13 @@ assert 6 'int main() { int a = 1, b = 2, c = 3; return a + b + c; }'
 assert 6 'int main() { int a, b, c; a=1; b=2; c=3; return a+b+c; }'
 assert 21 'int main() { int a = 1, *b, c[3]; b = &a; c[0]=10; c[1]=20; c[2]=30; return *b + c[1]; }'
 
+# Step 16.1: Variadic macros (__VA_ARGS__)
+assert 3 '#define FIRST(a, ...) a
+int main() { return FIRST(3, 4, 5); }'
+assert 42 '#define CALL(fn, ...) fn(__VA_ARGS__)
+int add(int a, int b) { return a+b; }
+int main() { return CALL(add, 20, 22); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
