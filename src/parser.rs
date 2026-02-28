@@ -740,7 +740,7 @@ impl<'a> Parser<'a> {
         if self.current().kind == TokenKind::Eq {
             self.advance();
             if self.current().kind == TokenKind::LBrace {
-                // Array initializer: = { expr, expr, ... }
+                // Brace initializer: = { expr, expr, ... }
                 self.advance();
                 let mut init_exprs = Vec::new();
                 while self.current().kind != TokenKind::RBrace {
@@ -761,18 +761,34 @@ impl<'a> Parser<'a> {
                 };
 
                 let unique = self.declare_var(&name, ty.clone());
+                let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty: ty.clone(), init: None }];
 
-                // Generate: VarDecl + assignment for each element
-                let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty, init: None }];
-                for (i, init_expr) in init_exprs.into_iter().enumerate() {
-                    stmts.push(Stmt::ExprStmt(Expr::Assign {
-                        lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
-                            op: BinOp::Add,
-                            lhs: Box::new(Expr::Var(unique.clone())),
-                            rhs: Box::new(Expr::Num(i as i64)),
-                        }))),
-                        rhs: Box::new(init_expr),
-                    }));
+                if let crate::types::TypeKind::Struct(ref members) = ty.kind {
+                    // Struct initializer: assign to each member
+                    for (i, init_expr) in init_exprs.into_iter().enumerate() {
+                        if i < members.len() {
+                            let mem_name = members[i].name.clone();
+                            stmts.push(Stmt::ExprStmt(Expr::Assign {
+                                lhs: Box::new(Expr::Member(
+                                    Box::new(Expr::Var(unique.clone())),
+                                    mem_name,
+                                )),
+                                rhs: Box::new(init_expr),
+                            }));
+                        }
+                    }
+                } else {
+                    // Array initializer: assign to each element
+                    for (i, init_expr) in init_exprs.into_iter().enumerate() {
+                        stmts.push(Stmt::ExprStmt(Expr::Assign {
+                            lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
+                                op: BinOp::Add,
+                                lhs: Box::new(Expr::Var(unique.clone())),
+                                rhs: Box::new(Expr::Num(i as i64)),
+                            }))),
+                            rhs: Box::new(init_expr),
+                        }));
+                    }
                 }
                 return Stmt::Block(stmts);
             } else {

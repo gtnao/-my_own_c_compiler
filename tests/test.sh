@@ -403,6 +403,12 @@ assert 6 'int main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }'
 assert 10 'int main() { int a[] = {1, 2, 3, 4}; return a[0] + a[1] + a[2] + a[3]; }'
 assert 4 'int main() { int a[] = {1, 2, 3, 4}; return sizeof(a) / sizeof(a[0]); }'
 
+# Step 9.2: struct initializer
+assert 3 'int main() { struct { int x; int y; } s = {1, 2}; return s.x + s.y; }'
+assert 10 'int main() { struct { int a; int b; int c; } s = {1, 2, 7}; return s.a + s.b + s.c; }'
+assert 42 'int main() { struct { int x; } s = {42}; return s.x; }'
+assert 3 'int main() { struct S { int x; int y; }; struct S s = {1, 2}; return s.x + s.y; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
