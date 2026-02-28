@@ -645,6 +645,12 @@ assert 7 'int add(int a, int b) { return a + b; } int main() { int (*fp)(int, in
 assert 2 'int sub(int a, int b) { return a - b; } int main() { int (*fp)(int, int) = sub; return fp(5, 3); }'
 assert 42 'int ret42() { return 42; } int main() { int (*fp)() = ret42; return fp(); }'
 
+# Step 12.7: Complex type declarations
+# Pointer to array: int (*p)[N]
+assert 20 'int main() { int a[3] = {10, 20, 30}; int (*p)[3] = &a; return (*p)[1]; }'
+# Array of pointers: int *a[N]
+assert 6 'int main() { int a=1; int b=2; int c=3; int *arr[3]; arr[0]=&a; arr[1]=&b; arr[2]=&c; return *arr[0] + *arr[1] + *arr[2]; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
