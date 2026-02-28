@@ -14,11 +14,19 @@ impl ErrorReporter {
     pub fn error_at(&self, pos: usize, msg: &str) -> ! {
         let (line_num, col, line_str) = self.get_location(pos);
 
-        eprintln!("{}:{}:{}: error: {}", self.filename, line_num, col + 1, msg);
+        eprintln!("{}:{}:{}: \x1b[1;31merror:\x1b[0m {}", self.filename, line_num, col + 1, msg);
         eprintln!("{}", line_str);
-        eprintln!("{}^", " ".repeat(col));
+        eprintln!("{}\x1b[1;32m^\x1b[0m", " ".repeat(col));
 
         std::process::exit(1);
+    }
+
+    pub fn warn_at(&self, pos: usize, msg: &str) {
+        let (line_num, col, line_str) = self.get_location(pos);
+
+        eprintln!("{}:{}:{}: \x1b[1;35mwarning:\x1b[0m {}", self.filename, line_num, col + 1, msg);
+        eprintln!("{}", line_str);
+        eprintln!("{}\x1b[1;32m^\x1b[0m", " ".repeat(col));
     }
 
     fn get_location(&self, pos: usize) -> (usize, usize, &str) {
