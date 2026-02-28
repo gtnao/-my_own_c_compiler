@@ -974,6 +974,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Expr::Num(val)
             }
+            TokenKind::Str(s) => {
+                self.advance();
+                Expr::StrLit(s)
+            }
             TokenKind::Ident(name) => {
                 self.advance();
                 // Function call: ident "(" args ")"

@@ -58,6 +58,17 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            // String literals
+            if ch == '"' {
+                let pos = self.pos;
+                let s = self.read_string();
+                tokens.push(Token {
+                    kind: TokenKind::Str(s),
+                    pos,
+                });
+                continue;
+            }
+
             if ch.is_ascii_digit() {
                 let pos = self.pos;
                 let val = self.read_number();
@@ -206,6 +217,37 @@ impl<'a> Lexer<'a> {
             }
         }
         String::from_utf8(self.input[start..self.pos].to_vec()).unwrap()
+    }
+
+    fn read_string(&mut self) -> String {
+        self.pos += 1; // skip opening '"'
+        let mut s = String::new();
+        while self.pos < self.input.len() {
+            let c = self.input[self.pos] as char;
+            if c == '"' {
+                self.pos += 1; // skip closing '"'
+                return s;
+            }
+            if c == '\\' {
+                self.pos += 1;
+                if self.pos < self.input.len() {
+                    let escaped = match self.input[self.pos] as char {
+                        'n' => '\n',
+                        't' => '\t',
+                        '\\' => '\\',
+                        '"' => '"',
+                        '0' => '\0',
+                        other => other,
+                    };
+                    s.push(escaped);
+                    self.pos += 1;
+                }
+                continue;
+            }
+            s.push(c);
+            self.pos += 1;
+        }
+        s
     }
 
     fn read_number(&mut self) -> i64 {

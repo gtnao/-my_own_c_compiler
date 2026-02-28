@@ -296,6 +296,15 @@ assert 8 'int main() { int *p; return sizeof(p); }'
 assert 3 'int main() { char a[3]; return sizeof(a); }'
 assert 1 'int main() { char a[3]; return sizeof(a[0]); }'
 
+# Step 6.1: string literals
+assert 104 'int main() { char *s = "hello"; return s[0]; }'
+assert 101 'int main() { char *s = "hello"; return s[1]; }'
+assert 0 'int main() { char *s = "hello"; return s[5]; }'
+assert 97 'int main() { return "abc"[0]; }'
+assert 99 'int main() { return "abc"[2]; }'
+assert 10 'int main() { return "\n"[0]; }'
+assert 0 'int main() { return "\0"[0]; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

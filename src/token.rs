@@ -2,6 +2,7 @@
 pub enum TokenKind {
     Num(i64),
     Ident(String),
+    Str(String),
     // Keywords
     Return,
     Int,

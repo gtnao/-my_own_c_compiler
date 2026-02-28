@@ -15,6 +15,7 @@ pub struct Codegen {
     stack_depth: usize,
     globals: HashSet<String>,
     global_types: HashMap<String, Type>,
+    string_literals: Vec<String>,
 }
 
 impl Codegen {
@@ -32,6 +33,7 @@ impl Codegen {
             stack_depth: 0,
             globals: HashSet::new(),
             global_types: HashMap::new(),
+            string_literals: Vec::new(),
         }
     }
 
@@ -61,6 +63,22 @@ impl Codegen {
         for func in &program.functions {
             self.gen_function(func);
         }
+
+        // Emit string literals in .rodata section
+        let strings = self.string_literals.clone();
+        if !strings.is_empty() {
+            self.emit("  .section .rodata");
+            for (i, s) in strings.iter().enumerate() {
+                self.emit(&format!(".LC{}:", i));
+                let mut bytes = Vec::new();
+                for &b in s.as_bytes() {
+                    bytes.push(format!("{}", b));
+                }
+                bytes.push("0".to_string()); // null terminator
+                self.emit(&format!("  .byte {}", bytes.join(",")));
+            }
+        }
+
         self.output.clone()
     }
 
@@ -480,6 +498,11 @@ impl Codegen {
                 let ty = self.expr_type(expr);
                 self.emit(&format!("  mov ${}, %rax", ty.size()));
             }
+            Expr::StrLit(s) => {
+                let idx = self.string_literals.len();
+                self.string_literals.push(s.clone());
+                self.emit(&format!("  lea .LC{}(%rip), %rax", idx));
+            }
             Expr::Cast { ty, expr } => {
                 self.gen_expr(expr);
                 // Truncate and re-extend to target type
@@ -644,6 +667,7 @@ impl Codegen {
                 let inner_ty = self.expr_type(inner);
                 Type::ptr_to(inner_ty)
             }
+            Expr::StrLit(_) => Type::ptr_to(Type::char_type()),
             Expr::BinOp { op, lhs, rhs } => {
                 let lhs_ty = self.expr_type(lhs);
                 let rhs_ty = self.expr_type(rhs);
