@@ -328,6 +328,7 @@ impl<'a> Parser<'a> {
             self.advance();
             let mut members = Vec::new();
             let mut offset = 0;
+            let mut bit_offset: usize = 0; // current bit offset within the current storage unit
             while self.current().kind != TokenKind::RBrace {
                 let mem_ty = self.parse_type();
                 let mem_name = match &self.current().kind {
@@ -340,6 +341,25 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
+
+                // Check for bit-field: "name : width"
+                let bit_width = if self.current().kind == TokenKind::Colon {
+                    self.advance();
+                    let width = match &self.current().kind {
+                        TokenKind::Num(n) => *n as usize,
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected bit-field width",
+                            );
+                        }
+                    };
+                    self.advance();
+                    width
+                } else {
+                    0
+                };
+
                 self.expect(TokenKind::Semicolon);
                 if is_union {
                     // Union: all members at offset 0
@@ -347,8 +367,45 @@ impl<'a> Parser<'a> {
                         name: mem_name,
                         ty: mem_ty.clone(),
                         offset: 0,
+                        bit_width,
+                        bit_offset: 0,
                     });
+                } else if bit_width > 0 {
+                    // Bit-field member
+                    let storage_size = mem_ty.size(); // e.g., 4 for int
+                    let storage_bits = storage_size * 8;
+                    // Align to storage unit boundary if needed
+                    let align = mem_ty.align();
+                    if bit_offset == 0 {
+                        offset = (offset + align - 1) & !(align - 1);
+                    }
+                    // Check if the bit-field fits in current storage unit
+                    if bit_offset + bit_width > storage_bits {
+                        // Move to next storage unit
+                        offset += storage_size;
+                        offset = (offset + align - 1) & !(align - 1);
+                        bit_offset = 0;
+                    }
+                    members.push(StructMember {
+                        name: mem_name,
+                        ty: mem_ty.clone(),
+                        offset,
+                        bit_width,
+                        bit_offset,
+                    });
+                    bit_offset += bit_width;
+                    // If we filled the storage unit, advance offset
+                    if bit_offset >= storage_bits {
+                        offset += storage_size;
+                        bit_offset = 0;
+                    }
                 } else {
+                    // Normal member: finish any pending bit-field storage unit
+                    if bit_offset > 0 {
+                        let prev_storage = mem_ty.size(); // approximate
+                        offset += prev_storage;
+                        bit_offset = 0;
+                    }
                     // Struct: align offset to member alignment
                     let align = mem_ty.align();
                     offset = (offset + align - 1) & !(align - 1);
@@ -356,6 +413,8 @@ impl<'a> Parser<'a> {
                         name: mem_name,
                         ty: mem_ty.clone(),
                         offset,
+                        bit_width: 0,
+                        bit_offset: 0,
                     });
                     offset += mem_ty.size();
                 }

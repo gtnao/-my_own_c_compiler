@@ -1,9 +1,14 @@
 /// Struct member with name, type, and byte offset.
+/// For bit-fields, bit_width and bit_offset specify the sub-byte layout.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructMember {
     pub name: String,
     pub ty: Type,
     pub offset: usize,
+    /// Bit-field width in bits (0 = normal member, not a bit-field)
+    pub bit_width: usize,
+    /// Bit offset within the storage unit (0 for normal members)
+    pub bit_offset: usize,
 }
 
 /// Base type kind.

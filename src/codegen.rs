@@ -395,20 +395,57 @@ impl Codegen {
                     // Leave dst address in %rax for chained assignment
                     self.gen_addr(lhs);
                 } else {
-                    self.gen_expr(rhs);
-                    match lhs.as_ref() {
-                        Expr::Var(name) => {
-                            self.emit_store_var(name);
+                    // Check for bit-field assignment
+                    let bf_info = if let Expr::Member(base, name) = lhs.as_ref() {
+                        let base_ty = self.expr_type(base);
+                        if let TypeKind::Struct(members) = &base_ty.kind {
+                            members.iter().find(|m| m.name == *name)
+                                .filter(|m| m.bit_width > 0)
+                                .map(|m| (m.bit_width, m.bit_offset))
+                        } else {
+                            None
                         }
-                        Expr::Deref(_) | Expr::Member(_, _) => {
-                            self.push(); // save rhs value
-                            self.gen_addr(lhs);
-                            self.emit("  mov %rax, %rdi"); // address in %rdi
-                            self.pop("%rax"); // value in %rax
-                            let ty = self.expr_type(lhs);
-                            self.emit_store_indirect(&ty);
+                    } else {
+                        None
+                    };
+
+                    if let Some((bit_width, bit_off)) = bf_info {
+                        // Bit-field assignment: read-modify-write
+                        self.gen_expr(rhs);
+                        let mask = (1u64 << bit_width) - 1;
+                        self.emit(&format!("  and ${}, %rax", mask)); // mask new value
+                        if bit_off > 0 {
+                            self.emit(&format!("  shl ${}, %rax", bit_off)); // shift to position
                         }
-                        _ => {}
+                        self.push(); // save shifted new value
+                        self.gen_addr(lhs);
+                        self.emit("  mov %rax, %rdi"); // address of storage unit
+                        let ty = self.expr_type(lhs);
+                        // Load current storage unit value
+                        self.emit_load_indirect(&ty);
+                        let clear_mask = !((mask) << bit_off) as i64;
+                        self.emit(&format!("  mov ${}, %rcx", clear_mask));
+                        self.emit("  and %rcx, %rax"); // clear old bits
+                        self.pop("%rcx"); // get shifted new value
+                        self.emit("  or %rcx, %rax"); // set new bits
+                        // Store back
+                        self.emit_store_indirect(&ty);
+                    } else {
+                        self.gen_expr(rhs);
+                        match lhs.as_ref() {
+                            Expr::Var(name) => {
+                                self.emit_store_var(name);
+                            }
+                            Expr::Deref(_) | Expr::Member(_, _) => {
+                                self.push(); // save rhs value
+                                self.gen_addr(lhs);
+                                self.emit("  mov %rax, %rdi"); // address in %rdi
+                                self.pop("%rax"); // value in %rax
+                                let ty = self.expr_type(lhs);
+                                self.emit_store_indirect(&ty);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -573,11 +610,29 @@ impl Codegen {
                 let ty = self.expr_type(expr);
                 self.emit(&format!("  mov ${}, %rax", ty.size()));
             }
-            Expr::Member(_, _) => {
+            Expr::Member(base, name) => {
+                // Check if this is a bit-field member
+                let base_ty = self.expr_type(base);
+                let bf_info = if let TypeKind::Struct(members) = &base_ty.kind {
+                    members.iter().find(|m| m.name == *name)
+                        .filter(|m| m.bit_width > 0)
+                        .map(|m| (m.bit_width, m.bit_offset))
+                } else {
+                    None
+                };
+
                 self.gen_addr(expr);
                 let ty = self.expr_type(expr);
                 if let TypeKind::Struct(_) = &ty.kind {
                     // Struct member: leave address in %rax (like array decay)
+                } else if let Some((bit_width, bit_off)) = bf_info {
+                    // Bit-field: load storage unit, extract bits
+                    self.emit_load_indirect(&ty);
+                    if bit_off > 0 {
+                        self.emit(&format!("  shr ${}, %rax", bit_off));
+                    }
+                    let mask = (1u64 << bit_width) - 1;
+                    self.emit(&format!("  and ${}, %rax", mask));
                 } else {
                     self.emit_load_indirect(&ty);
                 }
