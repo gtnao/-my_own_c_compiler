@@ -32,6 +32,8 @@ pub enum TokenKind {
     Extern,
     Const,
     Volatile,
+    Alignof,
+    Alignas,
     // Operators
     Plus,
     PlusPlus,

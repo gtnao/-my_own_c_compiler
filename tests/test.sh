@@ -657,6 +657,13 @@ assert 3 'int main() { struct { int a : 4; int b : 4; } s; s.a = 5; s.b = 3; ret
 assert 7 'int main() { struct { int x : 3; int y : 5; } s; s.x = 7; s.y = 31; return s.x; }'
 assert 31 'int main() { struct { int x : 3; int y : 5; } s; s.x = 7; s.y = 31; return s.y; }'
 
+# Step 12.11: _Alignof and _Alignas
+assert 4 'int main() { return _Alignof(int); }'
+assert 8 'int main() { return _Alignof(long); }'
+assert 1 'int main() { return _Alignof(char); }'
+assert 8 'int main() { return _Alignof(int *); }'
+assert 5 'int main() { _Alignas(16) int x = 5; return x; }'
+
 # Step 12.10: Flexible array member and struct array members
 assert 3 'int main() { struct { int x; int arr[3]; } s; s.arr[0]=1; s.arr[1]=2; s.arr[2]=3; return s.arr[1]+s.arr[0]; }'
 assert 4 'int main() { struct { int len; int data[]; } *p; char buf[20]; p = (struct { int len; int data[]; } *)buf; p->len = 3; p->data[0] = 4; return p->data[0]; }'

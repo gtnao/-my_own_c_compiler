@@ -81,6 +81,8 @@ impl<'a> Lexer<'a> {
                     "const" => TokenKind::Const,
                     "volatile" => TokenKind::Volatile,
                     "_Bool" => TokenKind::Bool,
+                    "_Alignof" => TokenKind::Alignof,
+                    "_Alignas" => TokenKind::Alignas,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

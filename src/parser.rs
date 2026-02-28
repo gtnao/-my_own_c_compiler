@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -143,6 +143,18 @@ impl<'a> Parser<'a> {
                         } else if self.tokens[i].kind == TokenKind::RBrace {
                             depth -= 1;
                         }
+                        i += 1;
+                    }
+                }
+            } else if self.tokens[i].kind == TokenKind::Alignas {
+                // Skip _Alignas(...)
+                i += 1; // _Alignas
+                if self.tokens[i].kind == TokenKind::LParen {
+                    i += 1;
+                    let mut depth = 1;
+                    while depth > 0 {
+                        if self.tokens[i].kind == TokenKind::LParen { depth += 1; }
+                        else if self.tokens[i].kind == TokenKind::RParen { depth -= 1; }
                         i += 1;
                     }
                 }
@@ -474,9 +486,21 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Type {
-        // Skip type qualifiers (const, volatile)
-        while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
-            self.advance();
+        // Skip type qualifiers (const, volatile) and _Alignas
+        while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
+            if self.current().kind == TokenKind::Alignas {
+                self.advance(); // _Alignas
+                self.expect(TokenKind::LParen);
+                // Skip the alignment value (number or type)
+                if self.is_type_start(&self.current().kind.clone()) {
+                    let _ty = self.parse_type();
+                } else {
+                    self.advance(); // skip number
+                }
+                self.expect(TokenKind::RParen);
+            } else {
+                self.advance();
+            }
         }
         let is_unsigned = if self.current().kind == TokenKind::Unsigned {
             self.advance();
@@ -589,7 +613,7 @@ impl<'a> Parser<'a> {
         while self.current().kind == TokenKind::Star {
             self.advance();
             // Skip qualifiers after * (e.g., int *const p)
-            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
                 self.advance();
             }
             ty = Type::ptr_to(ty);
@@ -949,7 +973,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas => {
                 self.var_decl()
             }
             _ => {
@@ -1312,7 +1336,7 @@ impl<'a> Parser<'a> {
                         let mut decl_ty = ty.clone();
                         while self.current().kind == TokenKind::Star {
                             self.advance();
-                            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+                            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
                                 self.advance();
                             }
                             decl_ty = Type::ptr_to(decl_ty);
@@ -1355,7 +1379,7 @@ impl<'a> Parser<'a> {
                 let mut decl_ty = ty.clone();
                 while self.current().kind == TokenKind::Star {
                     self.advance();
-                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
                         self.advance();
                     }
                     decl_ty = Type::ptr_to(decl_ty);
@@ -1765,6 +1789,14 @@ impl<'a> Parser<'a> {
                 }
                 let operand = self.unary();
                 return Expr::SizeofExpr(Box::new(operand));
+            }
+            TokenKind::Alignof => {
+                self.advance();
+                // _Alignof(type)
+                self.expect(TokenKind::LParen);
+                let ty = self.parse_type();
+                self.expect(TokenKind::RParen);
+                return Expr::Num(ty.align() as i64);
             }
             TokenKind::PlusPlus => {
                 self.advance();
