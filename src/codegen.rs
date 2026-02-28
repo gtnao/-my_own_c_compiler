@@ -6,6 +6,7 @@ pub struct Codegen {
     locals: HashMap<String, usize>,
     stack_size: usize,
     label_count: usize,
+    break_labels: Vec<String>,
 }
 
 impl Codegen {
@@ -15,6 +16,7 @@ impl Codegen {
             locals: HashMap::new(),
             stack_size: 0,
             label_count: 0,
+            break_labels: Vec::new(),
         }
     }
 
@@ -91,6 +93,7 @@ impl Codegen {
                 let begin_label = self.new_label();
                 let end_label = self.new_label();
 
+                self.break_labels.push(end_label.clone());
                 self.emit(&format!("{}:", begin_label));
                 self.gen_expr(cond);
                 self.emit("  cmp $0, %rax");
@@ -98,11 +101,77 @@ impl Codegen {
                 self.gen_stmt(body);
                 self.emit(&format!("  jmp {}", begin_label));
                 self.emit(&format!("{}:", end_label));
+                self.break_labels.pop();
+            }
+            Stmt::DoWhile { body, cond } => {
+                let begin_label = self.new_label();
+                let end_label = self.new_label();
+
+                self.break_labels.push(end_label.clone());
+                self.emit(&format!("{}:", begin_label));
+                self.gen_stmt(body);
+                self.gen_expr(cond);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  jne {}", begin_label));
+                self.emit(&format!("{}:", end_label));
+                self.break_labels.pop();
+            }
+            Stmt::Switch { cond, cases, default } => {
+                let end_label = self.new_label();
+                self.break_labels.push(end_label.clone());
+
+                self.gen_expr(cond);
+
+                // Generate comparisons and jumps to case labels
+                let mut case_labels = Vec::new();
+                for (val, _) in cases {
+                    let label = self.new_label();
+                    self.emit(&format!("  cmp ${}, %rax", val));
+                    self.emit(&format!("  je {}", label));
+                    case_labels.push(label);
+                }
+
+                // Jump to default or end
+                let default_label = if default.is_some() {
+                    let label = self.new_label();
+                    self.emit(&format!("  jmp {}", label));
+                    Some(label)
+                } else {
+                    self.emit(&format!("  jmp {}", end_label));
+                    None
+                };
+
+                // Generate case bodies
+                for (i, (_, stmts)) in cases.iter().enumerate() {
+                    self.emit(&format!("{}:", case_labels[i]));
+                    for s in stmts {
+                        self.gen_stmt(s);
+                    }
+                }
+
+                // Generate default body
+                if let Some(stmts) = default {
+                    if let Some(label) = default_label {
+                        self.emit(&format!("{}:", label));
+                    }
+                    for s in stmts {
+                        self.gen_stmt(s);
+                    }
+                }
+
+                self.emit(&format!("{}:", end_label));
+                self.break_labels.pop();
+            }
+            Stmt::Break => {
+                if let Some(label) = self.break_labels.last() {
+                    self.emit(&format!("  jmp {}", label));
+                }
             }
             Stmt::For { init, cond, inc, body } => {
                 let begin_label = self.new_label();
                 let end_label = self.new_label();
 
+                self.break_labels.push(end_label.clone());
                 if let Some(init_stmt) = init {
                     self.gen_stmt(init_stmt);
                 }
@@ -118,6 +187,7 @@ impl Codegen {
                 }
                 self.emit(&format!("  jmp {}", begin_label));
                 self.emit(&format!("{}:", end_label));
+                self.break_labels.pop();
             }
             Stmt::VarDecl { name, init } => {
                 if let Some(expr) = init {

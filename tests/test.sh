@@ -145,6 +145,15 @@ assert 20 'int main() { return 0 ? 10 : 20; }'
 assert 5 'int main() { int a = 3; return (a = 5, a); }'
 assert 10 'int main() { int a = 5; return a > 3 ? 10 : 20; }'
 
+# Step 2.14: do-while, switch/case/default, break
+assert 5 'int main() { int i = 0; do { i++; } while (i < 5); return i; }'
+assert 1 'int main() { int i = 0; do { i++; } while (0); return i; }'
+assert 20 'int main() { int a = 2; switch (a) { case 1: return 10; case 2: return 20; default: return 30; } }'
+assert 10 'int main() { int a = 1; switch (a) { case 1: return 10; case 2: return 20; default: return 30; } }'
+assert 30 'int main() { int a = 9; switch (a) { case 1: return 10; case 2: return 20; default: return 30; } }'
+assert 3 'int main() { int i = 0; while (i < 10) { if (i == 3) break; i++; } return i; }'
+assert 20 'int main() { int a = 2; int r = 0; switch (a) { case 1: r = 10; break; case 2: r = 20; break; default: r = 30; break; } return r; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

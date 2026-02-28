@@ -9,6 +9,11 @@ pub enum TokenKind {
     Else,
     While,
     For,
+    Do,
+    Switch,
+    Case,
+    Default,
+    Break,
     // Operators
     Plus,
     PlusPlus,

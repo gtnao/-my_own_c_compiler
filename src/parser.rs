@@ -135,6 +135,80 @@ impl<'a> Parser<'a> {
                     body: Box::new(body),
                 }
             }
+            TokenKind::Do => {
+                self.advance();
+                let body = self.stmt();
+                self.expect(TokenKind::While);
+                self.expect(TokenKind::LParen);
+                let cond = self.expr();
+                self.expect(TokenKind::RParen);
+                self.expect(TokenKind::Semicolon);
+                Stmt::DoWhile {
+                    body: Box::new(body),
+                    cond,
+                }
+            }
+            TokenKind::Switch => {
+                self.advance();
+                self.expect(TokenKind::LParen);
+                let cond = self.expr();
+                self.expect(TokenKind::RParen);
+                self.expect(TokenKind::LBrace);
+
+                let mut cases = Vec::new();
+                let mut default = None;
+
+                while self.current().kind != TokenKind::RBrace {
+                    if self.current().kind == TokenKind::Case {
+                        self.advance();
+                        let val = match &self.current().kind {
+                            TokenKind::Num(n) => *n,
+                            _ => {
+                                self.reporter.error_at(
+                                    self.current().pos,
+                                    "expected integer constant in case",
+                                );
+                            }
+                        };
+                        self.advance();
+                        self.expect(TokenKind::Colon);
+
+                        let mut stmts = Vec::new();
+                        while self.current().kind != TokenKind::Case
+                            && self.current().kind != TokenKind::Default
+                            && self.current().kind != TokenKind::RBrace
+                        {
+                            stmts.push(self.stmt());
+                        }
+                        cases.push((val, stmts));
+                    } else if self.current().kind == TokenKind::Default {
+                        self.advance();
+                        self.expect(TokenKind::Colon);
+
+                        let mut stmts = Vec::new();
+                        while self.current().kind != TokenKind::Case
+                            && self.current().kind != TokenKind::Default
+                            && self.current().kind != TokenKind::RBrace
+                        {
+                            stmts.push(self.stmt());
+                        }
+                        default = Some(stmts);
+                    } else {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected case or default in switch",
+                        );
+                    }
+                }
+                self.expect(TokenKind::RBrace);
+
+                Stmt::Switch { cond, cases, default }
+            }
+            TokenKind::Break => {
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+                Stmt::Break
+            }
             TokenKind::LBrace => {
                 self.advance();
                 let mut stmts = Vec::new();

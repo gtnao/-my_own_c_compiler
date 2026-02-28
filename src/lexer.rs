@@ -38,6 +38,11 @@ impl<'a> Lexer<'a> {
                     "else" => TokenKind::Else,
                     "while" => TokenKind::While,
                     "for" => TokenKind::For,
+                    "do" => TokenKind::Do,
+                    "switch" => TokenKind::Switch,
+                    "case" => TokenKind::Case,
+                    "default" => TokenKind::Default,
+                    "break" => TokenKind::Break,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

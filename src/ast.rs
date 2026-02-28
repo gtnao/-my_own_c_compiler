@@ -80,6 +80,16 @@ pub enum Stmt {
         inc: Option<Expr>,
         body: Box<Stmt>,
     },
+    DoWhile {
+        body: Box<Stmt>,
+        cond: Expr,
+    },
+    Switch {
+        cond: Expr,
+        cases: Vec<(i64, Vec<Stmt>)>,
+        default: Option<Vec<Stmt>>,
+    },
+    Break,
 }
 
 #[derive(Debug, Clone, PartialEq)]
