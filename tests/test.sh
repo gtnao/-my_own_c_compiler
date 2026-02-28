@@ -213,6 +213,12 @@ assert 42 'long g; int main() { g = 42; return g; }'
 assert 6 'int main() { char a = 1; short b = 2; int c = 3; return a + b + c; }'
 assert 10 'int add(int a, int b) { return a + b; } int main() { return add(3, 7); }'
 
+# Step 4.4: implicit type conversion
+assert 3 'int main() { char a = 1; int b = 2; return a + b; }'
+assert 0 'int main() { int a = 256; char b = a; return b; }'
+assert 7 'int main() { short a = 3; long b = 4; return a + b; }'
+assert 1 'int main() { char a = 1; short b = 2; int c = 3; long d = 4; return a + b + c + d - 9; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
