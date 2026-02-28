@@ -462,6 +462,22 @@ assert 8 'int g[3] = {1, 2, 3}; int main() { return g[0] + g[1] + g[2] + g[0] * 
 assert 104 'char s[] = "hello"; int main() { return s[0]; }'
 assert 0 'char s[] = "hello"; int main() { return s[5]; }'
 
+# Step 10.2: #include
+# Create test header file
+echo 'int add(int a, int b) { return a + b; }' > "$TMPDIR/add.h"
+echo '#include "add.h"
+int main() { return add(3, 4); }' > "$TMPDIR/include_test.c"
+$COMPILER "$TMPDIR/include_test.c" > "$TMPDIR/include_test.s"
+gcc -o "$TMPDIR/include_test" "$TMPDIR/include_test.s"
+actual=$("$TMPDIR/include_test"; echo $?)
+if [ "$actual" = "7" ]; then
+  echo "OK: include test => 7"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: include test => $actual (expected 7)"
+  FAIL=$((FAIL + 1))
+fi
+
 # Step 9.7: extern declaration
 assert 5 'extern int g; int g = 5; int main() { return g; }'
 assert 0 'extern int printf(); int main() { printf("hello"); return 0; }'

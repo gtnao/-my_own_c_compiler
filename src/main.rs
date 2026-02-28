@@ -3,6 +3,7 @@ mod codegen;
 mod error;
 mod lexer;
 mod parser;
+mod preprocess;
 mod token;
 mod types;
 
@@ -14,6 +15,7 @@ use crate::codegen::Codegen;
 use crate::error::ErrorReporter;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::preprocess::preprocess;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -28,7 +30,10 @@ fn main() {
         process::exit(1);
     });
 
-    let source = input.trim();
+    // Preprocess (handle #include)
+    let preprocessed = preprocess(&input, filename);
+    let source = preprocessed.trim();
+
     let reporter = ErrorReporter::new(filename, source);
 
     let mut lexer = Lexer::new(source, &reporter);
