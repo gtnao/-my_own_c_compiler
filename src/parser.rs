@@ -520,10 +520,24 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Short => {
                 self.advance();
+                // Skip optional "int" (short int)
+                if self.current().kind == TokenKind::Int {
+                    self.advance();
+                }
                 if is_unsigned { Type::ushort() } else { Type::short_type() }
             }
             TokenKind::Long => {
                 self.advance();
+                // Skip optional "long" (long long) or "int" (long int)
+                if self.current().kind == TokenKind::Long {
+                    self.advance();
+                    // Skip optional "int" after "long long"
+                    if self.current().kind == TokenKind::Int {
+                        self.advance();
+                    }
+                } else if self.current().kind == TokenKind::Int {
+                    self.advance();
+                }
                 if is_unsigned { Type::ulong() } else { Type::long_type() }
             }
             TokenKind::Void => {
