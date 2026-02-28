@@ -711,6 +711,10 @@ assert 42 'int main() __attribute__((unused)) { return 42; }'
 assert 5 '__attribute__((unused)) int main() { return 5; }'
 assert 3 'int __attribute__((noinline)) add(int a, int b) { return a + b; } int main() { return add(1, 2); }'
 
+# Step 14.4: inline and static inline
+assert 6 'static inline int add(int a, int b) { return a + b; } int main() { return add(2, 4); }'
+assert 10 'inline int dbl(int x) { return x * 2; } int main() { return dbl(5); }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'

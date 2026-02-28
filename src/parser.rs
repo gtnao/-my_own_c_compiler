@@ -40,6 +40,10 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Program {
         let mut functions = Vec::new();
         while self.current().kind != TokenKind::Eof {
+            // Skip top-level 'static' qualifier (treat static functions/vars as normal)
+            if self.current().kind == TokenKind::Static {
+                self.advance();
+            }
             // Handle extern declaration (just skip it — no storage allocated)
             if self.current().kind == TokenKind::Extern {
                 self.advance();
@@ -104,7 +108,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -486,7 +490,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Type {
-        // Skip __attribute__ before type
+        // Skip __attribute__ and inline before type
+        self.skip_attribute();
+        while self.current().kind == TokenKind::Inline {
+            self.advance();
+        }
         self.skip_attribute();
         // Skip type qualifiers (const, volatile) and _Alignas
         while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
@@ -1001,7 +1009,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline => {
                 self.var_decl()
             }
             _ => {

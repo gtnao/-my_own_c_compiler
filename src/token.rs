@@ -39,6 +39,7 @@ pub enum TokenKind {
     Alignas,
     Generic,
     Attribute,
+    Inline,
     // Operators
     Plus,
     PlusPlus,
