@@ -145,8 +145,13 @@ fn preprocess_recursive(
             continue;
         }
 
-        if trimmed.starts_with("#include") {
-            let rest = trimmed["#include".len()..].trim();
+        if trimmed.starts_with("#include_next") || trimmed.starts_with("#include") {
+            let directive_len = if trimmed.starts_with("#include_next") {
+                "#include_next".len()
+            } else {
+                "#include".len()
+            };
+            let rest = trimmed[directive_len..].trim();
             let (include_path, is_system) = if rest.starts_with('"') {
                 let end = rest[1..].find('"').map(|i| i + 1);
                 if let Some(end) = end {
