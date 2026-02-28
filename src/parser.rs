@@ -71,7 +71,7 @@ impl<'a> Parser<'a> {
     }
 
     fn global_var(&mut self) {
-        // type ident ";"
+        // type ident ("[" num "]")* ";"
         let ty = self.parse_type();
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
@@ -83,6 +83,32 @@ impl<'a> Parser<'a> {
             }
         };
         self.advance();
+
+        // Array dimensions
+        let ty = {
+            let mut dims = Vec::new();
+            while self.current().kind == TokenKind::LBracket {
+                self.advance();
+                let len = match &self.current().kind {
+                    TokenKind::Num(n) => *n as usize,
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected array size",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::RBracket);
+                dims.push(len);
+            }
+            let mut ty = ty;
+            for &len in dims.iter().rev() {
+                ty = Type::array_of(ty, len);
+            }
+            ty
+        };
+
         self.expect(TokenKind::Semicolon);
         self.globals.push((ty, name));
     }

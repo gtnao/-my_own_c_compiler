@@ -280,6 +280,12 @@ assert 15 'int main() { int a[2][3]; int i; int j; int v = 0; for (i = 0; i < 2;
 assert 5 'int main() { int a[2][3]; a[1][2] = 5; return a[1][2]; }'
 assert 7 'int main() { char a[2][3]; a[0][1] = 7; return a[0][1]; }'
 
+# Step 5.5: global arrays
+assert 3 'int a[3]; int main() { a[0] = 1; a[1] = 2; a[2] = 3; return a[2]; }'
+assert 6 'int a[3]; int main() { a[0] = 1; a[1] = 2; a[2] = 3; return a[0] + a[1] + a[2]; }'
+assert 42 'int a[2][3]; int main() { a[1][2] = 42; return a[1][2]; }'
+assert 10 'int a[5]; int main() { int i; for (i = 0; i < 5; i++) a[i] = i; int s = 0; for (i = 0; i < 5; i++) s += a[i]; return s; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
