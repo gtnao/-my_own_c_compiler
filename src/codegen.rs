@@ -116,6 +116,10 @@ impl Codegen {
                 TypeKind::Long | TypeKind::Ptr(_) => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
+                TypeKind::Array(_, _) => {
+                    // Array params treated as pointers
+                    self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
+                }
                 TypeKind::Void => {}
             }
         }
@@ -487,7 +491,7 @@ impl Codegen {
                     TypeKind::Short => self.emit("  movswq %ax, %rax"),
                     TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
                     TypeKind::Int => self.emit("  movslq %eax, %rax"),
-                    TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) => {} // no-op
+                    TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) => {} // no-op
                 }
             }
             Expr::BinOp { op, lhs, rhs } => {
@@ -628,13 +632,38 @@ impl Codegen {
             Expr::Deref(inner) => {
                 let inner_ty = self.expr_type(inner);
                 match inner_ty.kind {
-                    TypeKind::Ptr(base) => *base,
+                    TypeKind::Ptr(base) | TypeKind::Array(base, _) => *base,
                     _ => Type::long_type(),
                 }
             }
             Expr::Addr(inner) => {
                 let inner_ty = self.expr_type(inner);
                 Type::ptr_to(inner_ty)
+            }
+            Expr::BinOp { op, lhs, rhs } => {
+                let lhs_ty = self.expr_type(lhs);
+                let rhs_ty = self.expr_type(rhs);
+                match op {
+                    BinOp::Add => {
+                        if lhs_ty.is_pointer() {
+                            Type::ptr_to(lhs_ty.base_type().unwrap().clone())
+                        } else if rhs_ty.is_pointer() {
+                            Type::ptr_to(rhs_ty.base_type().unwrap().clone())
+                        } else {
+                            Type::long_type()
+                        }
+                    }
+                    BinOp::Sub => {
+                        if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+                            Type::long_type()
+                        } else if lhs_ty.is_pointer() {
+                            Type::ptr_to(lhs_ty.base_type().unwrap().clone())
+                        } else {
+                            Type::long_type()
+                        }
+                    }
+                    _ => Type::long_type(),
+                }
             }
             _ => Type::long_type(),
         }
@@ -701,6 +730,10 @@ impl Codegen {
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl {}(%rip), %eax", name)),
                 TypeKind::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov {}(%rip), %rax", name)),
+                TypeKind::Array(_, _) => {
+                    // Array-to-pointer decay: load address of the array
+                    self.emit(&format!("  lea {}(%rip), %rax", name));
+                }
                 TypeKind::Void => {}
             }
         } else {
@@ -714,6 +747,10 @@ impl Codegen {
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl -{}(%rbp), %eax", offset)),
                 TypeKind::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
+                TypeKind::Array(_, _) => {
+                    // Array-to-pointer decay: load address of the array
+                    self.emit(&format!("  lea -{}(%rbp), %rax", offset));
+                }
                 TypeKind::Void => {}
             }
         }
@@ -732,7 +769,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, {}(%rip)", name)),
-                TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
@@ -741,7 +778,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
-                TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Void => {}
             }
         }
     }
@@ -759,7 +796,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
-                TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
@@ -768,7 +805,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
-                TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Void => {}
             }
         }
     }

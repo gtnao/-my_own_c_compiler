@@ -168,6 +168,8 @@ impl<'a> Lexer<'a> {
                 ')' => TokenKind::RParen,
                 '{' => TokenKind::LBrace,
                 '}' => TokenKind::RBrace,
+                '[' => TokenKind::LBracket,
+                ']' => TokenKind::RBracket,
                 ';' => TokenKind::Semicolon,
                 _ => {
                     self.reporter.error_at(self.pos, &format!("unexpected character '{}'", ch));

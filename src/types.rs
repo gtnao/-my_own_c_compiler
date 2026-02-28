@@ -8,6 +8,7 @@ pub enum TypeKind {
     Int,
     Long,
     Ptr(Box<Type>),
+    Array(Box<Type>, usize),
 }
 
 /// Type representation with signedness.
@@ -28,6 +29,9 @@ impl Type {
 
     // Pointer constructor
     pub fn ptr_to(base: Type) -> Self { Self { kind: TypeKind::Ptr(Box::new(base)), is_unsigned: false } }
+
+    // Array constructor
+    pub fn array_of(base: Type, len: usize) -> Self { Self { kind: TypeKind::Array(Box::new(base), len), is_unsigned: false } }
 
     // Unsigned constructors
     pub fn uchar() -> Self { Self { kind: TypeKind::Char, is_unsigned: true } }
@@ -51,7 +55,7 @@ impl Type {
 
     /// Returns the size in bytes of this type.
     pub fn size(&self) -> usize {
-        match self.kind {
+        match &self.kind {
             TypeKind::Void => 0,
             TypeKind::Bool => 1,
             TypeKind::Char => 1,
@@ -59,12 +63,13 @@ impl Type {
             TypeKind::Int => 4,
             TypeKind::Long => 8,
             TypeKind::Ptr(_) => 8,
+            TypeKind::Array(base, len) => base.size() * len,
         }
     }
 
     /// Returns the alignment in bytes of this type.
     pub fn align(&self) -> usize {
-        match self.kind {
+        match &self.kind {
             TypeKind::Void => 1,
             TypeKind::Bool => 1,
             TypeKind::Char => 1,
@@ -72,20 +77,22 @@ impl Type {
             TypeKind::Int => 4,
             TypeKind::Long => 8,
             TypeKind::Ptr(_) => 8,
+            TypeKind::Array(base, _) => base.align(),
         }
     }
 
-    /// Returns the base type of a pointer, or None if not a pointer.
+    /// Returns the base type of a pointer or array, or None otherwise.
     pub fn base_type(&self) -> Option<&Type> {
         match &self.kind {
             TypeKind::Ptr(base) => Some(base),
+            TypeKind::Array(base, _) => Some(base),
             _ => None,
         }
     }
 
-    /// Returns true if this is a pointer type.
+    /// Returns true if this is a pointer or array type.
     pub fn is_pointer(&self) -> bool {
-        matches!(self.kind, TypeKind::Ptr(_))
+        matches!(self.kind, TypeKind::Ptr(_) | TypeKind::Array(_, _))
     }
 }
 

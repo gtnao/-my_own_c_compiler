@@ -263,6 +263,16 @@ assert 5 'int main() { int x = 5; int *p = &x; int **pp = &p; return **pp; }'
 assert 2 'int main() { int a = 1; int b = 2; int *p = &a; p = p - 1; return *p; }'
 assert 1 'int main() { int a = 1; int b = 2; int *pa = &a; int *pb = &b; return pa - pb; }'
 
+# Step 5.3: arrays
+assert 1 'int main() { int a[3]; *a = 1; return *a; }'
+assert 2 'int main() { int a[3]; *(a + 1) = 2; return *(a + 1); }'
+assert 3 'int main() { int a[3]; a[0] = 1; a[1] = 2; a[2] = 3; return a[2]; }'
+assert 6 'int main() { int a[3]; a[0] = 1; a[1] = 2; a[2] = 3; return a[0] + a[1] + a[2]; }'
+assert 5 'int main() { int a[2]; a[0] = 2; a[1] = 3; return a[0] + a[1]; }'
+assert 10 'int main() { int a[5]; int i; for (i = 0; i < 5; i++) a[i] = i; int s = 0; for (i = 0; i < 5; i++) s += a[i]; return s; }'
+assert 1 'int main() { char a[3]; a[0] = 1; return a[0]; }'
+assert 3 'int main() { int a[3]; a[0] = 1; a[1] = 2; a[2] = 3; int *p = a; return p[2]; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

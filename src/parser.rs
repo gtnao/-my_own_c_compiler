@@ -439,7 +439,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // var_decl = type ident ("=" expr)? ";"
+    // var_decl = type ident ("[" num "]")? ("=" expr)? ";"
     fn var_decl(&mut self) -> Stmt {
         let ty = self.parse_type();
         let name = match &self.current().kind {
@@ -452,6 +452,25 @@ impl<'a> Parser<'a> {
             }
         };
         self.advance();
+
+        // Array declaration: ident "[" num "]"
+        let ty = if self.current().kind == TokenKind::LBracket {
+            self.advance();
+            let len = match &self.current().kind {
+                TokenKind::Num(n) => *n as usize,
+                _ => {
+                    self.reporter.error_at(
+                        self.current().pos,
+                        "expected array size",
+                    );
+                }
+            };
+            self.advance();
+            self.expect(TokenKind::RBracket);
+            Type::array_of(ty, len)
+        } else {
+            ty
+        };
 
         let unique = self.declare_var(&name, ty.clone());
 
@@ -874,12 +893,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // postfix = primary ("++" | "--")*
+    // postfix = primary ("[" expr "]" | "++" | "--")*
     fn postfix(&mut self) -> Expr {
         let mut node = self.primary();
 
         loop {
             match self.current().kind {
+                TokenKind::LBracket => {
+                    self.advance();
+                    let index = self.expr();
+                    self.expect(TokenKind::RBracket);
+                    // a[i] is *(a + i)
+                    node = Expr::Deref(Box::new(Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(node),
+                        rhs: Box::new(index),
+                    }));
+                }
                 TokenKind::PlusPlus => {
                     self.advance();
                     node = Expr::PostInc(Box::new(node));
