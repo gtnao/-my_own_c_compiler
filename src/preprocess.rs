@@ -13,6 +13,48 @@ pub fn preprocess(source: &str, file_path: &str) -> String {
     let mut included = HashSet::new();
     included.insert(PathBuf::from(file_path).canonicalize().unwrap_or_default());
     let mut macros = HashMap::new();
+    // Predefined macros
+    macros.insert("__STDC__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__STDC_VERSION__".to_string(), MacroDef::Object("201112L".to_string()));
+    macros.insert("__STDC_HOSTED__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__LP64__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__x86_64__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__x86_64".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__amd64__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__amd64".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__linux__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__linux".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("linux".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__unix__".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__unix".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("unix".to_string(), MacroDef::Object("1".to_string()));
+    macros.insert("__GNUC__".to_string(), MacroDef::Object("4".to_string()));
+    macros.insert("__GNUC_MINOR__".to_string(), MacroDef::Object("0".to_string()));
+    macros.insert("__GNUC_PATCHLEVEL__".to_string(), MacroDef::Object("0".to_string()));
+    macros.insert("__SIZEOF_SHORT__".to_string(), MacroDef::Object("2".to_string()));
+    macros.insert("__SIZEOF_INT__".to_string(), MacroDef::Object("4".to_string()));
+    macros.insert("__SIZEOF_LONG__".to_string(), MacroDef::Object("8".to_string()));
+    macros.insert("__SIZEOF_LONG_LONG__".to_string(), MacroDef::Object("8".to_string()));
+    macros.insert("__SIZEOF_POINTER__".to_string(), MacroDef::Object("8".to_string()));
+    macros.insert("__SIZEOF_FLOAT__".to_string(), MacroDef::Object("4".to_string()));
+    macros.insert("__SIZEOF_DOUBLE__".to_string(), MacroDef::Object("8".to_string()));
+    macros.insert("__CHAR_BIT__".to_string(), MacroDef::Object("8".to_string()));
+    macros.insert("__BYTE_ORDER__".to_string(), MacroDef::Object("1234".to_string()));
+    macros.insert("__ORDER_LITTLE_ENDIAN__".to_string(), MacroDef::Object("1234".to_string()));
+    macros.insert("__ORDER_BIG_ENDIAN__".to_string(), MacroDef::Object("4321".to_string()));
+    macros.insert("__INTMAX_TYPE__".to_string(), MacroDef::Object("long".to_string()));
+    macros.insert("__INT64_TYPE__".to_string(), MacroDef::Object("long".to_string()));
+    macros.insert("__UINT64_TYPE__".to_string(), MacroDef::Object("unsigned long".to_string()));
+    macros.insert("__SIZE_TYPE__".to_string(), MacroDef::Object("unsigned long".to_string()));
+    macros.insert("__PTRDIFF_TYPE__".to_string(), MacroDef::Object("long".to_string()));
+    macros.insert("__INTPTR_TYPE__".to_string(), MacroDef::Object("long".to_string()));
+    macros.insert("__UINTPTR_TYPE__".to_string(), MacroDef::Object("unsigned long".to_string()));
+    macros.insert("__WCHAR_TYPE__".to_string(), MacroDef::Object("int".to_string()));
+    macros.insert("__INT_MAX__".to_string(), MacroDef::Object("2147483647".to_string()));
+    macros.insert("__LONG_MAX__".to_string(), MacroDef::Object("9223372036854775807L".to_string()));
+    macros.insert("__SHRT_MAX__".to_string(), MacroDef::Object("32767".to_string()));
+    macros.insert("__SCHAR_MAX__".to_string(), MacroDef::Object("127".to_string()));
+    macros.insert("NULL".to_string(), MacroDef::Object("((void *)0)".to_string()));
     preprocess_recursive(source, file_path, &mut included, &mut macros)
 }
 

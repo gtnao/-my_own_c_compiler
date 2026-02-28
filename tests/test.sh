@@ -907,6 +907,20 @@ int main() { return 1; }
 int main() { return 0; }
 #endif'
 
+# Step 16.5: Predefined macros
+assert 1 '#if defined(__STDC__)
+int main() { return 1; }
+#else
+int main() { return 0; }
+#endif'
+assert 1 '#if defined(__linux__) && defined(__x86_64__)
+int main() { return 1; }
+#else
+int main() { return 0; }
+#endif'
+assert 8 '#define PTRSIZE __SIZEOF_POINTER__
+int main() { return PTRSIZE; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
