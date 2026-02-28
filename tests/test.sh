@@ -316,6 +316,14 @@ assert 255 'int main() { return "\xff"[0] & 255; }'
 assert 65 'int main() { return "\101"[0]; }'
 assert 0 'int main() { return "\0"[0]; }'
 
+# Step 6.3: character literals
+assert 97 "int main() { return 'a'; }"
+assert 65 "int main() { return 'A'; }"
+assert 48 "int main() { return '0'; }"
+assert 10 "int main() { return '\\n'; }"
+assert 92 "int main() { return '\\\\'; }"
+assert 0 "int main() { return '\\0'; }"
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

@@ -58,6 +58,17 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            // Character literals
+            if ch == '\'' {
+                let pos = self.pos;
+                let val = self.read_char_literal();
+                tokens.push(Token {
+                    kind: TokenKind::Num(val as i64),
+                    pos,
+                });
+                continue;
+            }
+
             // String literals
             if ch == '"' {
                 let pos = self.pos;
@@ -217,6 +228,55 @@ impl<'a> Lexer<'a> {
             }
         }
         String::from_utf8(self.input[start..self.pos].to_vec()).unwrap()
+    }
+
+    fn read_char_literal(&mut self) -> u8 {
+        self.pos += 1; // skip opening '\''
+        let val = if self.input[self.pos] == b'\\' {
+            self.pos += 1;
+            match self.input[self.pos] {
+                b'n' => { self.pos += 1; b'\n' }
+                b't' => { self.pos += 1; b'\t' }
+                b'r' => { self.pos += 1; b'\r' }
+                b'a' => { self.pos += 1; 0x07 }
+                b'b' => { self.pos += 1; 0x08 }
+                b'f' => { self.pos += 1; 0x0C }
+                b'v' => { self.pos += 1; 0x0B }
+                b'\\' => { self.pos += 1; b'\\' }
+                b'\'' => { self.pos += 1; b'\'' }
+                b'"' => { self.pos += 1; b'"' }
+                b'0' => { self.pos += 1; 0 }
+                b'x' => {
+                    self.pos += 1;
+                    let mut val = 0u32;
+                    while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_hexdigit() {
+                        val = val * 16 + (self.input[self.pos] as char).to_digit(16).unwrap();
+                        self.pos += 1;
+                    }
+                    val as u8
+                }
+                d if d >= b'0' && d <= b'7' => {
+                    let mut val = (d - b'0') as u32;
+                    self.pos += 1;
+                    for _ in 0..2 {
+                        if self.pos < self.input.len() && self.input[self.pos] >= b'0' && self.input[self.pos] <= b'7' {
+                            val = val * 8 + (self.input[self.pos] - b'0') as u32;
+                            self.pos += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    val as u8
+                }
+                other => { self.pos += 1; other }
+            }
+        } else {
+            let c = self.input[self.pos];
+            self.pos += 1;
+            c
+        };
+        self.pos += 1; // skip closing '\''
+        val
     }
 
     fn read_string(&mut self) -> Vec<u8> {
