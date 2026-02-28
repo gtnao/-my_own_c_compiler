@@ -259,6 +259,10 @@ assert 10 'int main() { int a = 5; int *p = &a; *p = 10; return a; }'
 assert 3 'int main() { int a = 3; return *&a; }'
 assert 5 'int main() { int x = 5; int *p = &x; int **pp = &p; return **pp; }'
 
+# Step 5.2: pointer arithmetic
+assert 2 'int main() { int a = 1; int b = 2; int *p = &a; p = p - 1; return *p; }'
+assert 1 'int main() { int a = 1; int b = 2; int *pa = &a; int *pb = &b; return pa - pb; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

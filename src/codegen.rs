@@ -496,12 +496,47 @@ impl Codegen {
                 self.gen_expr(lhs);
                 self.pop("%rdi");
 
+                // After evaluation: %rax = lhs, %rdi = rhs
+                let lhs_ty = self.expr_type(lhs);
+                let rhs_ty = self.expr_type(rhs);
+
                 match op {
                     BinOp::Add => {
+                        if lhs_ty.is_pointer() {
+                            // ptr + int: scale rhs by sizeof(*ptr)
+                            let size = lhs_ty.base_type().unwrap().size();
+                            if size > 1 {
+                                self.emit(&format!("  imul ${}, %rdi", size));
+                            }
+                        } else if rhs_ty.is_pointer() {
+                            // int + ptr: scale lhs by sizeof(*ptr)
+                            let size = rhs_ty.base_type().unwrap().size();
+                            if size > 1 {
+                                self.emit(&format!("  imul ${}, %rax", size));
+                            }
+                        }
                         self.emit("  add %rdi, %rax");
                     }
                     BinOp::Sub => {
-                        self.emit("  sub %rdi, %rax");
+                        if lhs_ty.is_pointer() && rhs_ty.is_pointer() {
+                            // ptr - ptr: result is element count
+                            self.emit("  sub %rdi, %rax");
+                            let size = lhs_ty.base_type().unwrap().size();
+                            if size > 1 {
+                                self.emit(&format!("  mov ${}, %rdi", size));
+                                self.emit("  cqto");
+                                self.emit("  idiv %rdi");
+                            }
+                        } else if lhs_ty.is_pointer() {
+                            // ptr - int: scale rhs by sizeof(*ptr)
+                            let size = lhs_ty.base_type().unwrap().size();
+                            if size > 1 {
+                                self.emit(&format!("  imul ${}, %rdi", size));
+                            }
+                            self.emit("  sub %rdi, %rax");
+                        } else {
+                            self.emit("  sub %rdi, %rax");
+                        }
                     }
                     BinOp::Mul => {
                         self.emit("  imul %rdi, %rax");
