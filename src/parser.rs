@@ -47,15 +47,21 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned)
     }
 
     fn is_function(&self) -> bool {
         // type ident "(" → function/prototype
-        if Self::is_type_keyword(&self.tokens[self.pos].kind) {
-            if let TokenKind::Ident(_) = &self.tokens[self.pos + 1].kind {
-                return self.tokens[self.pos + 2].kind == TokenKind::LParen;
-            }
+        // Handles multi-token types like "unsigned int"
+        if !Self::is_type_keyword(&self.tokens[self.pos].kind) {
+            return false;
+        }
+        let mut i = self.pos;
+        while Self::is_type_keyword(&self.tokens[i].kind) {
+            i += 1;
+        }
+        if let TokenKind::Ident(_) = &self.tokens[i].kind {
+            return self.tokens[i + 1].kind == TokenKind::LParen;
         }
         false
     }
@@ -79,32 +85,44 @@ impl<'a> Parser<'a> {
 
     /// Parse a type specifier and return the corresponding Type.
     fn parse_type(&mut self) -> Type {
+        let is_unsigned = if self.current().kind == TokenKind::Unsigned {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
         match self.current().kind {
             TokenKind::Int => {
                 self.advance();
-                Type::Int
+                if is_unsigned { Type::uint() } else { Type::int_type() }
             }
             TokenKind::Char => {
                 self.advance();
-                Type::Char
+                if is_unsigned { Type::uchar() } else { Type::char_type() }
             }
             TokenKind::Short => {
                 self.advance();
-                Type::Short
+                if is_unsigned { Type::ushort() } else { Type::short_type() }
             }
             TokenKind::Long => {
                 self.advance();
-                Type::Long
+                if is_unsigned { Type::ulong() } else { Type::long_type() }
             }
             TokenKind::Void => {
                 self.advance();
-                Type::Void
+                Type::void()
             }
             _ => {
-                self.reporter.error_at(
-                    self.current().pos,
-                    &format!("expected type, but got {:?}", self.current().kind),
-                );
+                if is_unsigned {
+                    // bare "unsigned" = "unsigned int"
+                    Type::uint()
+                } else {
+                    self.reporter.error_at(
+                        self.current().pos,
+                        &format!("expected type, but got {:?}", self.current().kind),
+                    );
+                }
             }
         }
     }
@@ -378,7 +396,7 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned => {
                 self.var_decl()
             }
             _ => {
@@ -963,7 +981,7 @@ mod tests {
         let prog = parse_program("int main() { return 42; }");
         assert_eq!(prog.functions.len(), 1);
         assert_eq!(prog.functions[0].name, "main");
-        assert_eq!(prog.functions[0].return_ty, Type::Int);
+        assert_eq!(prog.functions[0].return_ty, Type::int_type());
         assert_eq!(prog.functions[0].body.len(), 1);
         assert_eq!(prog.functions[0].body[0], Stmt::Return(Some(Expr::Num(42))));
     }
@@ -991,7 +1009,7 @@ mod tests {
     fn test_var_decl() {
         let prog = parse_program("int main() { int a; a = 3; return a; }");
         assert_eq!(prog.functions[0].body.len(), 3);
-        assert_eq!(prog.functions[0].body[0], Stmt::VarDecl { name: "a".to_string(), ty: Type::Int, init: None });
+        assert_eq!(prog.functions[0].body[0], Stmt::VarDecl { name: "a".to_string(), ty: Type::int_type(), init: None });
     }
 
     #[test]
@@ -1000,7 +1018,7 @@ mod tests {
         assert_eq!(prog.functions[0].body.len(), 2);
         assert_eq!(
             prog.functions[0].body[0],
-            Stmt::VarDecl { name: "a".to_string(), ty: Type::Int, init: Some(Expr::Num(5)) }
+            Stmt::VarDecl { name: "a".to_string(), ty: Type::int_type(), init: Some(Expr::Num(5)) }
         );
     }
 
@@ -1022,22 +1040,22 @@ mod tests {
     #[test]
     fn test_global_var() {
         let prog = parse_program("int g; int main() { g = 5; return g; }");
-        assert_eq!(prog.globals, vec![(Type::Int, "g".to_string())]);
+        assert_eq!(prog.globals, vec![(Type::int_type(), "g".to_string())]);
         assert_eq!(prog.functions.len(), 1);
     }
 
     #[test]
     fn test_void_function() {
         let prog = parse_program("void noop() {} int main() { return 0; }");
-        assert_eq!(prog.functions[0].return_ty, Type::Void);
-        assert_eq!(prog.functions[1].return_ty, Type::Int);
+        assert_eq!(prog.functions[0].return_ty, Type::void());
+        assert_eq!(prog.functions[1].return_ty, Type::int_type());
     }
 
     #[test]
     fn test_function_params_typed() {
         let prog = parse_program("int add(int a, int b) { return a + b; }");
         assert_eq!(prog.functions[0].params.len(), 2);
-        assert_eq!(prog.functions[0].params[0], (Type::Int, "a".to_string()));
-        assert_eq!(prog.functions[0].params[1], (Type::Int, "b".to_string()));
+        assert_eq!(prog.functions[0].params[0], (Type::int_type(), "a".to_string()));
+        assert_eq!(prog.functions[0].params[1], (Type::int_type(), "b".to_string()));
     }
 }

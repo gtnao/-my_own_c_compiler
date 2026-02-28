@@ -233,6 +233,17 @@ assert 2 'int main() { return sizeof(short); }'
 assert 4 'int main() { return sizeof(int); }'
 assert 8 'int main() { return sizeof(long); }'
 
+# Step 4.7: unsigned types
+assert 200 'int main() { unsigned char a = 200; return a; }'
+assert 200 'int main() { unsigned int a = 200; return a; }'
+assert 42 'int main() { unsigned long a = 42; return a; }'
+assert 100 'int main() { unsigned short a = 100; return a; }'
+assert 42 'int main() { unsigned a = 42; return a; }'
+assert 4 'int main() { return sizeof(unsigned int); }'
+assert 8 'int main() { return sizeof(unsigned long); }'
+assert 0 'int main() { return (unsigned char)256; }'
+assert 200 'unsigned char g; int main() { g = 200; return g; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

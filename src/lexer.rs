@@ -49,6 +49,7 @@ impl<'a> Lexer<'a> {
                     "continue" => TokenKind::Continue,
                     "goto" => TokenKind::Goto,
                     "sizeof" => TokenKind::Sizeof,
+                    "unsigned" => TokenKind::Unsigned,
                     "void" => TokenKind::Void,
                     _ => TokenKind::Ident(word),
                 };

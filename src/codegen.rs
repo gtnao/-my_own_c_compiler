@@ -1,5 +1,5 @@
 use crate::ast::{BinOp, Expr, Function, Program, Stmt, UnaryOp};
-use crate::types::Type;
+use crate::types::{Type, TypeKind};
 use std::collections::{HashMap, HashSet};
 
 pub struct Codegen {
@@ -103,20 +103,20 @@ impl Codegen {
         let arg_regs_8 = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
         for (i, (ty, param)) in func.params.iter().enumerate().take(6) {
             let offset = self.locals[param];
-            match ty {
-                Type::Char => {
+            match ty.kind {
+                TypeKind::Char => {
                     self.emit(&format!("  movb {}, -{}(%rbp)", arg_regs_8[i], offset));
                 }
-                Type::Short => {
+                TypeKind::Short => {
                     self.emit(&format!("  movw {}, -{}(%rbp)", arg_regs_16[i], offset));
                 }
-                Type::Int => {
+                TypeKind::Int => {
                     self.emit(&format!("  movl {}, -{}(%rbp)", arg_regs_32[i], offset));
                 }
-                Type::Long => {
+                TypeKind::Long => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
-                Type::Void => {}
+                TypeKind::Void => {}
             }
         }
         // Copy stack parameters to local slots (7th and beyond)
@@ -459,11 +459,14 @@ impl Codegen {
             Expr::Cast { ty, expr } => {
                 self.gen_expr(expr);
                 // Truncate and re-extend to target type
-                match ty {
-                    Type::Char => self.emit("  movsbq %al, %rax"),
-                    Type::Short => self.emit("  movswq %ax, %rax"),
-                    Type::Int => self.emit("  movslq %eax, %rax"),
-                    Type::Long | Type::Void => {} // no-op
+                match ty.kind {
+                    TypeKind::Char if ty.is_unsigned => self.emit("  movzbl %al, %eax"),
+                    TypeKind::Char => self.emit("  movsbq %al, %rax"),
+                    TypeKind::Short if ty.is_unsigned => self.emit("  movzwl %ax, %eax"),
+                    TypeKind::Short => self.emit("  movswq %ax, %rax"),
+                    TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
+                    TypeKind::Int => self.emit("  movslq %eax, %rax"),
+                    TypeKind::Long | TypeKind::Void => {} // no-op
                 }
             }
             Expr::BinOp { op, lhs, rhs } => {
@@ -554,78 +557,84 @@ impl Codegen {
     }
 
     /// Get the type of a variable (local or global).
-    fn get_var_type(&self, name: &str) -> &Type {
+    fn get_var_type(&self, name: &str) -> Type {
         if let Some(ty) = self.local_types.get(name) {
-            return ty;
+            return ty.clone();
         }
         if let Some(ty) = self.global_types.get(name) {
-            return ty;
+            return ty.clone();
         }
-        &Type::Int
+        Type::int_type()
     }
 
     fn emit_load_var(&mut self, name: &str) {
-        let ty = self.get_var_type(name).clone();
+        let ty = self.get_var_type(name);
         if self.globals.contains(name) {
-            match ty {
-                Type::Char => self.emit(&format!("  movsbq {}(%rip), %rax", name)),
-                Type::Short => self.emit(&format!("  movswq {}(%rip), %rax", name)),
-                Type::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
-                Type::Long => self.emit(&format!("  mov {}(%rip), %rax", name)),
-                Type::Void => {}
+            match ty.kind {
+                TypeKind::Char if ty.is_unsigned => self.emit(&format!("  movzbl {}(%rip), %eax", name)),
+                TypeKind::Char => self.emit(&format!("  movsbq {}(%rip), %rax", name)),
+                TypeKind::Short if ty.is_unsigned => self.emit(&format!("  movzwl {}(%rip), %eax", name)),
+                TypeKind::Short => self.emit(&format!("  movswq {}(%rip), %rax", name)),
+                TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl {}(%rip), %eax", name)),
+                TypeKind::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
+                TypeKind::Long => self.emit(&format!("  mov {}(%rip), %rax", name)),
+                TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
-            match ty {
-                Type::Char => self.emit(&format!("  movsbq -{}(%rbp), %rax", offset)),
-                Type::Short => self.emit(&format!("  movswq -{}(%rbp), %rax", offset)),
-                Type::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
-                Type::Long => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
-                Type::Void => {}
+            match ty.kind {
+                TypeKind::Char if ty.is_unsigned => self.emit(&format!("  movzbl -{}(%rbp), %eax", offset)),
+                TypeKind::Char => self.emit(&format!("  movsbq -{}(%rbp), %rax", offset)),
+                TypeKind::Short if ty.is_unsigned => self.emit(&format!("  movzwl -{}(%rbp), %eax", offset)),
+                TypeKind::Short => self.emit(&format!("  movswq -{}(%rbp), %rax", offset)),
+                TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl -{}(%rbp), %eax", offset)),
+                TypeKind::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
+                TypeKind::Long => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
+                TypeKind::Void => {}
             }
         }
     }
 
     fn emit_store_var(&mut self, name: &str) {
-        let ty = self.get_var_type(name).clone();
+        let ty = self.get_var_type(name);
         if self.globals.contains(name) {
-            match ty {
-                Type::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
-                Type::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
-                Type::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
-                Type::Long => self.emit(&format!("  mov %rax, {}(%rip)", name)),
-                Type::Void => {}
+            match ty.kind {
+                TypeKind::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
+                TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
+                TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
+                TypeKind::Long => self.emit(&format!("  mov %rax, {}(%rip)", name)),
+                TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
-            match ty {
-                Type::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
-                Type::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
-                Type::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
-                Type::Long => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
-                Type::Void => {}
+            match ty.kind {
+                TypeKind::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
+                TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
+                TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
+                TypeKind::Long => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
+                TypeKind::Void => {}
             }
         }
     }
 
     fn emit_store_var_from_rdi(&mut self, name: &str) {
-        let ty = self.get_var_type(name).clone();
+        let ty = self.get_var_type(name);
         if self.globals.contains(name) {
-            match ty {
-                Type::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
-                Type::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
-                Type::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
-                Type::Long => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
-                Type::Void => {}
+            match ty.kind {
+                TypeKind::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
+                TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
+                TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
+                TypeKind::Long => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
+                TypeKind::Void => {}
             }
         } else {
             let offset = self.locals[name];
-            match ty {
-                Type::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
-                Type::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
-                Type::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
-                Type::Long => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
-                Type::Void => {}
+            match ty.kind {
+                TypeKind::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
+                TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
+                TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
+                TypeKind::Long => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
+                TypeKind::Void => {}
             }
         }
     }
@@ -657,7 +666,7 @@ mod tests {
             globals: vec![],
             functions: vec![Function {
                 name: "main".to_string(),
-                return_ty: Type::Int,
+                return_ty: Type::int_type(),
                 params: vec![],
                 body: vec![Stmt::Return(Some(Expr::Num(42)))],
                 locals: vec![],
@@ -675,17 +684,17 @@ mod tests {
             globals: vec![],
             functions: vec![Function {
                 name: "main".to_string(),
-                return_ty: Type::Int,
+                return_ty: Type::int_type(),
                 params: vec![],
                 body: vec![
                     Stmt::VarDecl {
                         name: "a".to_string(),
-                        ty: Type::Int,
+                        ty: Type::int_type(),
                         init: Some(Expr::Num(5)),
                     },
                     Stmt::Return(Some(Expr::Var("a".to_string()))),
                 ],
-                locals: vec![(Type::Int, "a".to_string())],
+                locals: vec![(Type::int_type(), "a".to_string())],
             }],
         };
         let output = codegen.generate(&program);
@@ -701,22 +710,48 @@ mod tests {
             globals: vec![],
             functions: vec![Function {
                 name: "main".to_string(),
-                return_ty: Type::Int,
+                return_ty: Type::int_type(),
                 params: vec![],
                 body: vec![
                     Stmt::VarDecl {
                         name: "a".to_string(),
-                        ty: Type::Char,
+                        ty: Type::char_type(),
                         init: Some(Expr::Num(65)),
                     },
                     Stmt::Return(Some(Expr::Var("a".to_string()))),
                 ],
-                locals: vec![(Type::Char, "a".to_string())],
+                locals: vec![(Type::char_type(), "a".to_string())],
             }],
         };
         let output = codegen.generate(&program);
         // char uses movb for store and movsbq for load
         assert!(output.contains("movb %al, -1(%rbp)"));
         assert!(output.contains("movsbq -1(%rbp), %rax"));
+    }
+
+    #[test]
+    fn test_unsigned_char_var() {
+        let mut codegen = Codegen::new();
+        let program = Program {
+            globals: vec![],
+            functions: vec![Function {
+                name: "main".to_string(),
+                return_ty: Type::int_type(),
+                params: vec![],
+                body: vec![
+                    Stmt::VarDecl {
+                        name: "a".to_string(),
+                        ty: Type::uchar(),
+                        init: Some(Expr::Num(200)),
+                    },
+                    Stmt::Return(Some(Expr::Var("a".to_string()))),
+                ],
+                locals: vec![(Type::uchar(), "a".to_string())],
+            }],
+        };
+        let output = codegen.generate(&program);
+        // unsigned char uses movb for store and movzbl for load
+        assert!(output.contains("movb %al, -1(%rbp)"));
+        assert!(output.contains("movzbl -1(%rbp), %eax"));
     }
 }
