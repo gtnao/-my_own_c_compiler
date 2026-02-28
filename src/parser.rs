@@ -1547,6 +1547,11 @@ impl<'a> Parser<'a> {
             TokenKind::StarEq => Some(BinOp::Mul),
             TokenKind::SlashEq => Some(BinOp::Div),
             TokenKind::PercentEq => Some(BinOp::Mod),
+            TokenKind::AmpEq => Some(BinOp::BitAnd),
+            TokenKind::PipeEq => Some(BinOp::BitOr),
+            TokenKind::CaretEq => Some(BinOp::BitXor),
+            TokenKind::LShiftEq => Some(BinOp::Shl),
+            TokenKind::RShiftEq => Some(BinOp::Shr),
             _ => None,
         };
 

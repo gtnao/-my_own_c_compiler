@@ -163,14 +163,35 @@ impl<'a> Lexer<'a> {
                 tokens.push(Token { kind: TokenKind::Ne, pos });
                 continue;
             }
+            if ch == '&' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::AmpEq, pos });
+                continue;
+            }
             if ch == '&' && self.peek_next() == Some('&') {
                 self.pos += 2;
                 tokens.push(Token { kind: TokenKind::AmpAmp, pos });
                 continue;
             }
+            if ch == '|' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::PipeEq, pos });
+                continue;
+            }
             if ch == '|' && self.peek_next() == Some('|') {
                 self.pos += 2;
                 tokens.push(Token { kind: TokenKind::PipePipe, pos });
+                continue;
+            }
+            if ch == '^' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::CaretEq, pos });
+                continue;
+            }
+            // Three-character: <<= and >>=
+            if ch == '<' && self.peek_next() == Some('<') && self.peek_at(2) == Some('=') {
+                self.pos += 3;
+                tokens.push(Token { kind: TokenKind::LShiftEq, pos });
                 continue;
             }
             if ch == '<' && self.peek_next() == Some('<') {
@@ -181,6 +202,11 @@ impl<'a> Lexer<'a> {
             if ch == '<' && self.peek_next() == Some('=') {
                 self.pos += 2;
                 tokens.push(Token { kind: TokenKind::Le, pos });
+                continue;
+            }
+            if ch == '>' && self.peek_next() == Some('>') && self.peek_at(2) == Some('=') {
+                self.pos += 3;
+                tokens.push(Token { kind: TokenKind::RShiftEq, pos });
                 continue;
             }
             if ch == '>' && self.peek_next() == Some('>') {

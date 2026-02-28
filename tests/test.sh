@@ -764,6 +764,14 @@ assert 0 'struct S { int a; int b; }; int main() { return __builtin_offsetof(str
 assert 1 'int main() { return __builtin_types_compatible_p(int, int); }'
 assert 0 'int main() { return __builtin_types_compatible_p(int, long); }'
 
+# Step 14.12: bitwise compound assignment operators
+assert 1 'int main() { int a = 3; a &= 1; return a; }'
+assert 7 'int main() { int a = 5; a |= 2; return a; }'
+assert 6 'int main() { int a = 5; a ^= 3; return a; }'
+assert 8 'int main() { int a = 1; a <<= 3; return a; }'
+assert 2 'int main() { int a = 8; a >>= 2; return a; }'
+assert 3 'int main() { int a = 0xFF; a &= 0x03; return a; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
