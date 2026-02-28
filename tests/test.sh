@@ -440,6 +440,10 @@ assert_output 'hello' 'int printf(); int main() { printf("hello"); return 0; }'
 assert_output '42' 'int printf(); int main() { printf("%d", 42); return 0; }'
 assert_output '3 + 4 = 7' 'int printf(); int main() { printf("%d + %d = %d", 3, 4, 3+4); return 0; }'
 
+# Step 12.1: array parameter
+assert 6 'int sum(int a[], int n) { int s = 0; int i; for (i = 0; i < n; i++) s += a[i]; return s; } int main() { int a[3] = {1, 2, 3}; return sum(a, 3); }'
+assert 3 'int first(int a[]) { return a[0]; } int main() { int a[3] = {3, 2, 1}; return first(a); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

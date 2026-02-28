@@ -386,23 +386,8 @@ impl<'a> Parser<'a> {
 
         // Parse parameter list: (type ident ("," type ident)*)?
         if self.current().kind != TokenKind::RParen {
-            let param_ty = self.parse_type();
-            let param_name = match &self.current().kind {
-                TokenKind::Ident(s) => s.clone(),
-                _ => {
-                    self.reporter.error_at(
-                        self.current().pos,
-                        "expected parameter name",
-                    );
-                }
-            };
-            self.advance();
-            let unique = self.declare_var(&param_name, param_ty.clone());
-            params.push((param_ty, unique));
-
-            while self.current().kind == TokenKind::Comma {
-                self.advance();
-                let param_ty = self.parse_type();
+            loop {
+                let mut param_ty = self.parse_type();
                 let param_name = match &self.current().kind {
                     TokenKind::Ident(s) => s.clone(),
                     _ => {
@@ -413,8 +398,23 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
+                // Array parameter: int a[] → int *a
+                if self.current().kind == TokenKind::LBracket {
+                    self.advance();
+                    if self.current().kind == TokenKind::Num(0) || self.current().kind != TokenKind::RBracket {
+                        // Skip optional size
+                        self.advance();
+                    }
+                    self.expect(TokenKind::RBracket);
+                    param_ty = Type::ptr_to(param_ty);
+                }
                 let unique = self.declare_var(&param_name, param_ty.clone());
                 params.push((param_ty, unique));
+
+                if self.current().kind != TokenKind::Comma {
+                    break;
+                }
+                self.advance();
             }
         }
         self.expect(TokenKind::RParen);
