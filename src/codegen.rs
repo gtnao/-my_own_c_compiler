@@ -82,6 +82,18 @@ impl Codegen {
                 }
                 self.emit(&format!("{}:", end_label));
             }
+            Stmt::While { cond, body } => {
+                let begin_label = self.new_label();
+                let end_label = self.new_label();
+
+                self.emit(&format!("{}:", begin_label));
+                self.gen_expr(cond);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  je {}", end_label));
+                self.gen_stmt(body);
+                self.emit(&format!("  jmp {}", begin_label));
+                self.emit(&format!("{}:", end_label));
+            }
             Stmt::VarDecl { name, init } => {
                 if let Some(expr) = init {
                     self.gen_expr(expr);

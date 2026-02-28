@@ -7,6 +7,7 @@ pub enum TokenKind {
     Int,
     If,
     Else,
+    While,
     // Operators
     Plus,
     Minus,

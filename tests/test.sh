@@ -83,6 +83,10 @@ assert 2 'int main() { if (0) return 1; else return 2; }'
 assert 1 'int main() { if (1) return 1; else return 2; }'
 assert 4 'int main() { int a = 0; if (1) a = 4; return a; }'
 
+# Step 2.5: while statement
+assert 10 'int main() { int i = 0; while (i < 10) i = i + 1; return i; }'
+assert 0 'int main() { int i = 0; while (i > 0) i = i - 1; return i; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

@@ -83,6 +83,17 @@ impl<'a> Parser<'a> {
                     else_stmt,
                 }
             }
+            TokenKind::While => {
+                self.advance();
+                self.expect(TokenKind::LParen);
+                let cond = self.expr();
+                self.expect(TokenKind::RParen);
+                let body = self.stmt();
+                Stmt::While {
+                    cond,
+                    body: Box::new(body),
+                }
+            }
             TokenKind::Int => {
                 self.var_decl()
             }
