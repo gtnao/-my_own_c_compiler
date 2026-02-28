@@ -479,6 +479,15 @@ int main() { return X + Y; }'
 assert 5 '#define VAL 5
 int main() { int a = VAL; return a; }'
 
+# Step 10.6: # (stringize) and ## (token paste) operators
+assert_output 'hello' '#define STR(x) #x
+int printf();
+int main() { printf(STR(hello)); return 0; }'
+assert 12 '#define CONCAT(a,b) a##b
+int main() { int xy = 12; return CONCAT(x,y); }'
+assert 42 '#define VAR(n) var##n
+int main() { int var1 = 42; return VAR(1); }'
+
 # Step 10.5: conditional compilation (#ifdef, #ifndef, #if, #else, #elif, #endif)
 assert 1 '#define FOO
 #ifdef FOO

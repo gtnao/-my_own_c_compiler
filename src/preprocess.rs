@@ -353,12 +353,77 @@ fn parse_cond_value(s: &str, macros: &HashMap<String, MacroDef>) -> i64 {
 }
 
 /// Substitute parameter names in a macro body with argument values.
+/// Also handles # (stringize) and ## (token paste) operators.
 fn substitute_params(body: &str, params: &[String], args: &[String]) -> String {
     let bytes = body.as_bytes();
     let mut result = String::new();
     let mut i = 0;
 
     while i < bytes.len() {
+        // Handle # (stringize) operator: #param → "arg"
+        if bytes[i] == b'#' && i + 1 < bytes.len() && bytes[i + 1] != b'#' {
+            i += 1;
+            // Skip whitespace after #
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            // Read identifier
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let ident = &body[start..i];
+            if let Some(pos) = params.iter().position(|p| p == ident) {
+                let arg = if pos < args.len() { &args[pos] } else { "" };
+                result.push('"');
+                // Escape special characters in the argument
+                for ch in arg.chars() {
+                    if ch == '"' || ch == '\\' {
+                        result.push('\\');
+                    }
+                    result.push(ch);
+                }
+                result.push('"');
+            } else {
+                result.push('#');
+                result.push_str(ident);
+            }
+            continue;
+        }
+
+        // Handle ## (token paste) operator
+        if bytes[i] == b'#' && i + 1 < bytes.len() && bytes[i + 1] == b'#' {
+            // Remove trailing whitespace from result
+            while result.ends_with(' ') {
+                result.pop();
+            }
+            i += 2;
+            // Skip whitespace after ##
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            // Read the next token and substitute if it's a parameter
+            if i < bytes.len() && (bytes[i].is_ascii_alphabetic() || bytes[i] == b'_') {
+                let start = i;
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    i += 1;
+                }
+                let ident = &body[start..i];
+                if let Some(pos) = params.iter().position(|p| p == ident) {
+                    if pos < args.len() {
+                        result.push_str(&args[pos]);
+                    }
+                } else {
+                    result.push_str(ident);
+                }
+            } else if i < bytes.len() {
+                // Non-identifier token (e.g., digit)
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            continue;
+        }
+
         if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
             let start = i;
             while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
