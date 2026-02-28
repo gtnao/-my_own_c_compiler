@@ -71,6 +71,11 @@ assert 3 'int main() { int a; a = 3; return a; }'
 assert 8 'int main() { int a; int b; a = 3; b = 5; return a + b; }'
 assert 14 'int main() { int a; int b; a = 3; b = 5; return a * b - 1; }'
 
+# Step 2.3: multi-character variable names
+assert 3 'int main() { int foo; int bar; foo = 1; bar = 2; return foo + bar; }'
+assert 10 'int main() { int hello = 10; return hello; }'
+assert 14 'int main() { int a_b = 3; int c_d = 5; int e = a_b + c_d; return a_b + c_d + e - 2; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
