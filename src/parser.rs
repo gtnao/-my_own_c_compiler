@@ -1430,11 +1430,7 @@ impl<'a> Parser<'a> {
         while self.current().kind == TokenKind::Pipe {
             self.advance();
             let rhs = self.bitwise_xor();
-            node = Expr::BinOp {
-                op: BinOp::BitOr,
-                lhs: Box::new(node),
-                rhs: Box::new(rhs),
-            };
+            node = Self::make_binop(BinOp::BitOr, node, rhs);
         }
 
         node
@@ -1447,11 +1443,7 @@ impl<'a> Parser<'a> {
         while self.current().kind == TokenKind::Caret {
             self.advance();
             let rhs = self.bitwise_and();
-            node = Expr::BinOp {
-                op: BinOp::BitXor,
-                lhs: Box::new(node),
-                rhs: Box::new(rhs),
-            };
+            node = Self::make_binop(BinOp::BitXor, node, rhs);
         }
 
         node
@@ -1464,11 +1456,7 @@ impl<'a> Parser<'a> {
         while self.current().kind == TokenKind::Amp {
             self.advance();
             let rhs = self.equality();
-            node = Expr::BinOp {
-                op: BinOp::BitAnd,
-                lhs: Box::new(node),
-                rhs: Box::new(rhs),
-            };
+            node = Self::make_binop(BinOp::BitAnd, node, rhs);
         }
 
         node
@@ -1483,20 +1471,12 @@ impl<'a> Parser<'a> {
                 TokenKind::EqEq => {
                     self.advance();
                     let rhs = self.relational();
-                    node = Expr::BinOp {
-                        op: BinOp::Eq,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Eq, node, rhs);
                 }
                 TokenKind::Ne => {
                     self.advance();
                     let rhs = self.relational();
-                    node = Expr::BinOp {
-                        op: BinOp::Ne,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Ne, node, rhs);
                 }
                 _ => break,
             }
@@ -1514,38 +1494,22 @@ impl<'a> Parser<'a> {
                 TokenKind::Lt => {
                     self.advance();
                     let rhs = self.shift();
-                    node = Expr::BinOp {
-                        op: BinOp::Lt,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Lt, node, rhs);
                 }
                 TokenKind::Le => {
                     self.advance();
                     let rhs = self.shift();
-                    node = Expr::BinOp {
-                        op: BinOp::Le,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Le, node, rhs);
                 }
                 TokenKind::Gt => {
                     self.advance();
                     let rhs = self.shift();
-                    node = Expr::BinOp {
-                        op: BinOp::Gt,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Gt, node, rhs);
                 }
                 TokenKind::Ge => {
                     self.advance();
                     let rhs = self.shift();
-                    node = Expr::BinOp {
-                        op: BinOp::Ge,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Ge, node, rhs);
                 }
                 _ => break,
             }
@@ -1563,20 +1527,12 @@ impl<'a> Parser<'a> {
                 TokenKind::LShift => {
                     self.advance();
                     let rhs = self.add();
-                    node = Expr::BinOp {
-                        op: BinOp::Shl,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Shl, node, rhs);
                 }
                 TokenKind::RShift => {
                     self.advance();
                     let rhs = self.add();
-                    node = Expr::BinOp {
-                        op: BinOp::Shr,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Shr, node, rhs);
                 }
                 _ => break,
             }
@@ -1594,20 +1550,12 @@ impl<'a> Parser<'a> {
                 TokenKind::Plus => {
                     self.advance();
                     let rhs = self.mul();
-                    node = Expr::BinOp {
-                        op: BinOp::Add,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Add, node, rhs);
                 }
                 TokenKind::Minus => {
                     self.advance();
                     let rhs = self.mul();
-                    node = Expr::BinOp {
-                        op: BinOp::Sub,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Sub, node, rhs);
                 }
                 _ => break,
             }
@@ -1625,29 +1573,17 @@ impl<'a> Parser<'a> {
                 TokenKind::Star => {
                     self.advance();
                     let rhs = self.unary();
-                    node = Expr::BinOp {
-                        op: BinOp::Mul,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Mul, node, rhs);
                 }
                 TokenKind::Slash => {
                     self.advance();
                     let rhs = self.unary();
-                    node = Expr::BinOp {
-                        op: BinOp::Div,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Div, node, rhs);
                 }
                 TokenKind::Percent => {
                     self.advance();
                     let rhs = self.unary();
-                    node = Expr::BinOp {
-                        op: BinOp::Mod,
-                        lhs: Box::new(node),
-                        rhs: Box::new(rhs),
-                    };
+                    node = Self::make_binop(BinOp::Mod, node, rhs);
                 }
                 _ => break,
             }
@@ -2137,6 +2073,35 @@ impl<'a> Parser<'a> {
             scope.insert(name.to_string(), unique.clone());
         }
         unique
+    }
+
+    /// Create a BinOp node, folding constants when both operands are Num.
+    fn make_binop(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        if let (Expr::Num(l), Expr::Num(r)) = (&lhs, &rhs) {
+            let result = match op {
+                BinOp::Add => l.wrapping_add(*r),
+                BinOp::Sub => l.wrapping_sub(*r),
+                BinOp::Mul => l.wrapping_mul(*r),
+                BinOp::Div if *r != 0 => l.wrapping_div(*r),
+                BinOp::Mod if *r != 0 => l.wrapping_rem(*r),
+                BinOp::Eq => if l == r { 1 } else { 0 },
+                BinOp::Ne => if l != r { 1 } else { 0 },
+                BinOp::Lt => if l < r { 1 } else { 0 },
+                BinOp::Le => if l <= r { 1 } else { 0 },
+                BinOp::Gt => if l > r { 1 } else { 0 },
+                BinOp::Ge => if l >= r { 1 } else { 0 },
+                BinOp::BitAnd => l & r,
+                BinOp::BitOr => l | r,
+                BinOp::BitXor => l ^ r,
+                BinOp::Shl => l.wrapping_shl(*r as u32),
+                BinOp::Shr => l.wrapping_shr(*r as u32),
+                _ => {
+                    return Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) };
+                }
+            };
+            return Expr::Num(result);
+        }
+        Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) }
     }
 
     fn resolve_var(&self, name: &str) -> String {
