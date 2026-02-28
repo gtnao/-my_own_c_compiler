@@ -1,5 +1,6 @@
 mod ast;
 mod codegen;
+mod error;
 mod lexer;
 mod parser;
 mod token;
@@ -9,6 +10,7 @@ use std::fs;
 use std::process;
 
 use crate::codegen::Codegen;
+use crate::error::ErrorReporter;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 
@@ -19,15 +21,19 @@ fn main() {
         process::exit(1);
     }
 
-    let input = fs::read_to_string(&args[1]).unwrap_or_else(|err| {
-        eprintln!("Failed to read file '{}': {}", args[1], err);
+    let filename = &args[1];
+    let input = fs::read_to_string(filename).unwrap_or_else(|err| {
+        eprintln!("Failed to read file '{}': {}", filename, err);
         process::exit(1);
     });
 
-    let mut lexer = Lexer::new(input.trim());
+    let source = input.trim();
+    let reporter = ErrorReporter::new(filename, source);
+
+    let mut lexer = Lexer::new(source, &reporter);
     let tokens = lexer.tokenize();
 
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(tokens, &reporter);
     let expr = parser.parse();
 
     let mut codegen = Codegen::new();

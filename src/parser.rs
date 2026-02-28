@@ -1,21 +1,25 @@
 use crate::ast::{BinOp, Expr, UnaryOp};
+use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
 
-pub struct Parser {
+pub struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
+    reporter: &'a ErrorReporter,
 }
 
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+impl<'a> Parser<'a> {
+    pub fn new(tokens: Vec<Token>, reporter: &'a ErrorReporter) -> Self {
+        Self { tokens, pos: 0, reporter }
     }
 
     pub fn parse(&mut self) -> Expr {
         let expr = self.expr();
         if self.current().kind != TokenKind::Eof {
-            eprintln!("Unexpected token: {:?}", self.current().kind);
-            std::process::exit(1);
+            self.reporter.error_at(
+                self.current().pos,
+                &format!("unexpected token: {:?}", self.current().kind),
+            );
         }
         expr
     }
@@ -209,8 +213,10 @@ impl Parser {
                 node
             }
             _ => {
-                eprintln!("Expected a number or '(', but got {:?}", self.current().kind);
-                std::process::exit(1);
+                self.reporter.error_at(
+                    self.current().pos,
+                    &format!("expected a number or '(', but got {:?}", self.current().kind),
+                );
             }
         }
     }
@@ -225,8 +231,10 @@ impl Parser {
 
     fn expect(&mut self, kind: TokenKind) {
         if self.current().kind != kind {
-            eprintln!("Expected {:?}, but got {:?}", kind, self.current().kind);
-            std::process::exit(1);
+            self.reporter.error_at(
+                self.current().pos,
+                &format!("expected {:?}, but got {:?}", kind, self.current().kind),
+            );
         }
         self.advance();
     }
@@ -238,9 +246,10 @@ mod tests {
     use crate::lexer::Lexer;
 
     fn parse(input: &str) -> Expr {
-        let mut lexer = Lexer::new(input);
+        let reporter = crate::error::ErrorReporter::new("test", input);
+        let mut lexer = Lexer::new(input, &reporter);
         let tokens = lexer.tokenize();
-        let mut parser = Parser::new(tokens);
+        let mut parser = Parser::new(tokens, &reporter);
         parser.parse()
     }
 

@@ -1,15 +1,18 @@
+use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
 
-pub struct Lexer {
+pub struct Lexer<'a> {
     input: Vec<u8>,
     pos: usize,
+    reporter: &'a ErrorReporter,
 }
 
-impl Lexer {
-    pub fn new(input: &str) -> Self {
+impl<'a> Lexer<'a> {
+    pub fn new(input: &str, reporter: &'a ErrorReporter) -> Self {
         Self {
             input: input.as_bytes().to_vec(),
             pos: 0,
+            reporter,
         }
     }
 
@@ -69,8 +72,7 @@ impl Lexer {
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
                 _ => {
-                    eprintln!("Unexpected character '{}' at position {}", ch, self.pos);
-                    std::process::exit(1);
+                    self.reporter.error_at(self.pos, &format!("unexpected character '{}'", ch));
                 }
             };
             self.pos += 1;
@@ -107,10 +109,15 @@ impl Lexer {
 mod tests {
     use super::*;
 
+    fn tokenize(input: &str) -> Vec<Token> {
+        let reporter = ErrorReporter::new("test", input);
+        let mut lexer = Lexer::new(input, &reporter);
+        lexer.tokenize()
+    }
+
     #[test]
     fn test_single_number() {
-        let mut lexer = Lexer::new("42");
-        let tokens = lexer.tokenize();
+        let tokens = tokenize("42");
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens[0].kind, TokenKind::Num(42));
         assert_eq!(tokens[1].kind, TokenKind::Eof);
@@ -118,8 +125,7 @@ mod tests {
 
     #[test]
     fn test_addition() {
-        let mut lexer = Lexer::new("1+2");
-        let tokens = lexer.tokenize();
+        let tokens = tokenize("1+2");
         assert_eq!(tokens.len(), 4);
         assert_eq!(tokens[0].kind, TokenKind::Num(1));
         assert_eq!(tokens[1].kind, TokenKind::Plus);
@@ -129,8 +135,7 @@ mod tests {
 
     #[test]
     fn test_whitespace() {
-        let mut lexer = Lexer::new(" 12 + 34 - 5 ");
-        let tokens = lexer.tokenize();
+        let tokens = tokenize(" 12 + 34 - 5 ");
         assert_eq!(tokens.len(), 6);
         assert_eq!(tokens[0].kind, TokenKind::Num(12));
         assert_eq!(tokens[1].kind, TokenKind::Plus);
