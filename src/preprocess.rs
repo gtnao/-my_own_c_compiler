@@ -156,6 +156,17 @@ fn preprocess_recursive(
         } else if trimmed.starts_with("#undef") {
             let name = trimmed["#undef".len()..].trim();
             macros.remove(name);
+        } else if trimmed.starts_with("#error") {
+            let msg = trimmed["#error".len()..].trim();
+            eprintln!("{}:{}: error: {}", file_path, line_no + 1, msg);
+            std::process::exit(1);
+        } else if trimmed.starts_with("#warning") {
+            let msg = trimmed["#warning".len()..].trim();
+            eprintln!("{}:{}: warning: {}", file_path, line_no + 1, msg);
+        } else if trimmed.starts_with("#line") {
+            // #line N — ignored (informational only)
+        } else if trimmed.starts_with("#pragma") {
+            // #pragma — ignored
         } else {
             // Replace predefined macros before general macro expansion
             let with_predefined = replace_predefined(line, file_path, line_no + 1);
