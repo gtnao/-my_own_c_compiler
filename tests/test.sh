@@ -343,6 +343,15 @@ assert 8 'int main() { return sizeof(struct { char a; int b; }); }'
 assert 3 'int main() { struct { int x; } s; s.x = 3; int *p = &s.x; return *p; }'
 assert 7 'int main() { struct { int a; int b; } s; s.a = 3; s.b = 4; int *p = &s.b; return s.a + *p; }'
 
+# Step 7.2: alignment and padding
+assert 16 'int main() { return sizeof(struct { char a; long b; }); }'
+assert 4 'int main() { return sizeof(struct { char a; char b; short c; }); }'
+assert 12 'int main() { return sizeof(struct { char a; int b; char c; }); }'
+assert 24 'int main() { return sizeof(struct { char a; long b; char c; }); }'
+assert 2 'int main() { return sizeof(struct { char a; char b; }); }'
+assert 42 'int main() { struct { char a; long b; } s; s.b = 42; return s.b; }'
+assert 3 'int main() { struct { char a; int b; char c; } s; s.a = 1; s.b = 2; s.c = 3; return s.c; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
