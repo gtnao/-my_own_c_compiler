@@ -33,6 +33,8 @@ fn main() {
     let mut input_files: Vec<String> = Vec::new();
     let mut include_paths: Vec<String> = Vec::new();
     let mut defines: Vec<(String, String)> = Vec::new();
+    let mut pic_mode = false;
+    let mut shared_mode = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -81,6 +83,8 @@ fn main() {
                     defines.push((def.to_string(), "1".to_string()));
                 }
             }
+            "-fPIC" | "-fpic" => pic_mode = true,
+            "-shared" => shared_mode = true,
             arg if arg.starts_with('-') => {
                 // Ignore unknown flags for compatibility
             }
@@ -118,7 +122,7 @@ fn main() {
         }
         OutputMode::Assembly => {
             for filename in &input_files {
-                let asm = compile_to_assembly(filename, &include_paths, &defines);
+                let asm = compile_to_assembly(filename, &include_paths, &defines, pic_mode);
                 let out = output_file.clone().unwrap_or_else(|| {
                     filename.replace(".c", ".s")
                 });
@@ -130,7 +134,7 @@ fn main() {
         }
         OutputMode::Object => {
             for filename in &input_files {
-                let asm = compile_to_assembly(filename, &include_paths, &defines);
+                let asm = compile_to_assembly(filename, &include_paths, &defines, pic_mode);
                 let asm_file = format!("/tmp/mycc_{}.s", std::process::id());
                 fs::write(&asm_file, &asm).unwrap_or_else(|err| {
                     eprintln!("Failed to write temp file: {}", err);
@@ -155,13 +159,13 @@ fn main() {
         OutputMode::Executable => {
             if input_files.len() == 1 && output_file.is_none() {
                 // Legacy mode: single file, output to stdout
-                let asm = compile_to_assembly(&input_files[0], &include_paths, &defines);
+                let asm = compile_to_assembly(&input_files[0], &include_paths, &defines, pic_mode);
                 print!("{}", asm);
             } else {
                 // Multi-file: compile each to .o, then link
                 let mut obj_files = Vec::new();
                 for filename in &input_files {
-                    let asm = compile_to_assembly(filename, &include_paths, &defines);
+                    let asm = compile_to_assembly(filename, &include_paths, &defines, pic_mode);
                     let asm_file = format!("/tmp/mycc_{}_{}.s", std::process::id(), obj_files.len());
                     fs::write(&asm_file, &asm).unwrap_or_else(|err| {
                         eprintln!("Failed to write temp file: {}", err);
@@ -181,8 +185,14 @@ fn main() {
                     }
                     obj_files.push(obj_file);
                 }
-                let out = output_file.unwrap_or_else(|| "a.out".to_string());
-                let mut gcc_args: Vec<String> = obj_files.clone();
+                let out = output_file.unwrap_or_else(|| {
+                    if shared_mode { "a.so".to_string() } else { "a.out".to_string() }
+                });
+                let mut gcc_args: Vec<String> = Vec::new();
+                if shared_mode {
+                    gcc_args.push("-shared".to_string());
+                }
+                gcc_args.extend(obj_files.clone());
                 gcc_args.push("-o".to_string());
                 gcc_args.push(out);
                 let status = Command::new("gcc")
@@ -210,7 +220,7 @@ fn read_file(filename: &str) -> String {
     })
 }
 
-fn compile_to_assembly(filename: &str, include_paths: &[String], defines: &[(String, String)]) -> String {
+fn compile_to_assembly(filename: &str, include_paths: &[String], defines: &[(String, String)], pic: bool) -> String {
     let input = read_file(filename);
     let preprocessed = preprocess_with_options(&input, filename, include_paths, defines);
     let source = preprocessed.trim();
@@ -224,5 +234,6 @@ fn compile_to_assembly(filename: &str, include_paths: &[String], defines: &[(Str
     let program = parser.parse();
 
     let mut codegen = Codegen::new(filename);
+    codegen.set_pic_mode(pic);
     codegen.generate(&program)
 }

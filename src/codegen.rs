@@ -20,6 +20,8 @@ pub struct Codegen {
     current_func_param_count: usize,
     filename: String,
     struct_defs: HashMap<String, Type>,
+    pic_mode: bool,
+    extern_names: HashSet<String>,
 }
 
 impl Codegen {
@@ -42,7 +44,13 @@ impl Codegen {
             current_func_param_count: 0,
             filename: filename.to_string(),
             struct_defs: HashMap::new(),
+            pic_mode: false,
+            extern_names: HashSet::new(),
         }
+    }
+
+    pub fn set_pic_mode(&mut self, pic: bool) {
+        self.pic_mode = pic;
     }
 
     fn new_label(&mut self) -> String {
@@ -57,6 +65,8 @@ impl Codegen {
 
         // Store struct definitions for resolving forward-declared types
         self.struct_defs = program.struct_defs.clone();
+        // Store extern names for PIC mode
+        self.extern_names = program.extern_names.clone();
 
         // Register global variable names and types
         for (ty, name, _) in &program.globals {
@@ -79,16 +89,26 @@ impl Codegen {
                 self.emit("  .data");
                 let align = ty.align();
                 self.emit(&format!("  .align {}", align));
-                self.emit(&format!("  .globl {}", name));
+                if name.starts_with("__static.") {
+                    self.emit(&format!("  .local {}", name));
+                } else {
+                    self.emit(&format!("  .globl {}", name));
+                }
                 self.emit(&format!("{}:", name));
                 let byte_strs: Vec<String> = bytes.iter().map(|b| format!("{}", b)).collect();
                 self.emit(&format!("  .byte {}", byte_strs.join(",")));
                 self.emit("  .text");
             } else {
-                // Uninitialized global: .bss (via .comm)
+                // Uninitialized global: .bss
                 let size = ty.size();
                 let align = ty.align();
-                self.emit(&format!("  .comm {}, {}, {}", name, size, align));
+                if name.starts_with("__static.") {
+                    // Static local: use .local + .comm (file-scope linkage)
+                    self.emit(&format!("  .local {}", name));
+                    self.emit(&format!("  .comm {}, {}, {}", name, size, align));
+                } else {
+                    self.emit(&format!("  .comm {}, {}, {}", name, size, align));
+                }
             }
         }
 
@@ -665,8 +685,13 @@ impl Codegen {
                 self.emit("  mov %rcx, %rax"); // return old value
             }
             Expr::FuncCall { name, args } => {
+                let pic = self.pic_mode;
                 self.gen_call(args, |codegen| {
-                    codegen.emit(&format!("  call {}", name));
+                    if pic {
+                        codegen.emit(&format!("  call {}@PLT", name));
+                    } else {
+                        codegen.emit(&format!("  call {}", name));
+                    }
                 });
             }
             Expr::FuncPtrCall { fptr, args } => {
@@ -985,7 +1010,12 @@ impl Codegen {
         match expr {
             Expr::Var(name) => {
                 if self.globals.contains(name) {
-                    self.emit(&format!("  lea {}(%rip), %rax", name));
+                    if self.pic_mode && self.extern_names.contains(name) {
+                        // PIC: extern global accessed through GOT
+                        self.emit(&format!("  mov {}@GOTPCREL(%rip), %rax", name));
+                    } else {
+                        self.emit(&format!("  lea {}(%rip), %rax", name));
+                    }
                 } else {
                     let offset = self.locals[name];
                     self.emit(&format!("  lea -{}(%rbp), %rax", offset));
@@ -1219,11 +1249,21 @@ impl Codegen {
     fn emit_load_var(&mut self, name: &str) {
         // If name is not a declared variable, treat it as a function name (function-to-pointer decay)
         if !self.locals.contains_key(name) && !self.globals.contains(name) {
-            self.emit(&format!("  lea {}(%rip), %rax", name));
+            if self.pic_mode {
+                self.emit(&format!("  mov {}@GOTPCREL(%rip), %rax", name));
+            } else {
+                self.emit(&format!("  lea {}(%rip), %rax", name));
+            }
             return;
         }
         let ty = self.get_var_type(name);
         if self.globals.contains(name) {
+            // PIC mode extern: load via GOT
+            if self.pic_mode && self.extern_names.contains(name) {
+                self.emit(&format!("  mov {}@GOTPCREL(%rip), %rax", name));
+                self.emit_load_indirect(&ty);
+                return;
+            }
             match ty.kind {
                 TypeKind::Bool => self.emit(&format!("  movzbl {}(%rip), %eax", name)),
                 TypeKind::Char if ty.is_unsigned => self.emit(&format!("  movzbl {}(%rip), %eax", name)),
@@ -1263,6 +1303,14 @@ impl Codegen {
 
     fn emit_store_var(&mut self, name: &str) {
         let ty = self.get_var_type(name);
+        // PIC mode extern: store via GOT
+        if self.pic_mode && self.globals.contains(name) && self.extern_names.contains(name) {
+            self.push(); // save value
+            self.emit(&format!("  mov {}@GOTPCREL(%rip), %rdi", name));
+            self.pop("%rax"); // restore value
+            self.emit_store_indirect(&ty);
+            return;
+        }
         // Struct copy: %rax = source address, copy to variable location
         if let TypeKind::Struct(..) = &ty.kind {
             let size = ty.size();
