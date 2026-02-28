@@ -609,6 +609,10 @@ assert 10 'int apply(int (*f)(int), int x) { return f(x); } int dbl(int x) { ret
 assert 25 'int apply(int (*f)(int), int x) { return f(x); } int sq(int x) { return x * x; } int main() { return apply(sq, 5); }'
 assert 12 'int map_sum(int *a, int n, int (*f)(int)) { int s = 0; int i; for (i = 0; i < n; i++) s += f(a[i]); return s; } int dbl(int x) { return x * 2; } int main() { int a[3] = {1, 2, 3}; return map_sum(a, 3, dbl); }'
 
+# Step 12.6: for loop scope
+assert 100 'int main() { int i = 100; for (int i = 0; i < 5; i++) {} return i; }'
+assert 45 'int main() { int s = 0; for (int i = 0; i < 10; i++) s += i; return s; }'
+
 # Step 12.4-12.5: const and volatile qualifiers
 assert 42 'int main() { const int a = 42; return a; }'
 assert 3 'int main() { const int *p; int a = 3; p = &a; return *p; }'

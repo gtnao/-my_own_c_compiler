@@ -687,11 +687,17 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(TokenKind::LParen);
 
+                // Check if init is a variable declaration (needs scope)
+                let has_decl_init = self.is_type_start(&self.current().kind.clone()) && self.current().kind != TokenKind::Void;
+                if has_decl_init {
+                    self.enter_scope();
+                }
+
                 // init
                 let init = if self.current().kind == TokenKind::Semicolon {
                     self.advance();
                     None
-                } else if Self::is_type_keyword(&self.current().kind) && self.current().kind != TokenKind::Void {
+                } else if has_decl_init {
                     Some(Box::new(self.var_decl()))
                 } else {
                     let expr = self.expr();
@@ -716,6 +722,10 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::RParen);
 
                 let body = self.stmt();
+
+                if has_decl_init {
+                    self.leave_scope();
+                }
 
                 Stmt::For {
                     init,
