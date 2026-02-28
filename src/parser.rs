@@ -188,7 +188,7 @@ impl<'a> Parser<'a> {
         self.assign()
     }
 
-    // assign = equality ("=" assign)?
+    // assign = equality ("=" assign | "+=" assign | "-=" assign | "*=" assign | "/=" assign | "%=" assign)?
     fn assign(&mut self) -> Expr {
         let node = self.equality();
 
@@ -198,6 +198,29 @@ impl<'a> Parser<'a> {
             return Expr::Assign {
                 lhs: Box::new(node),
                 rhs: Box::new(rhs),
+            };
+        }
+
+        // Compound assignment: desugar a op= b into a = a op b
+        let op = match self.current().kind {
+            TokenKind::PlusEq => Some(BinOp::Add),
+            TokenKind::MinusEq => Some(BinOp::Sub),
+            TokenKind::StarEq => Some(BinOp::Mul),
+            TokenKind::SlashEq => Some(BinOp::Div),
+            TokenKind::PercentEq => Some(BinOp::Mod),
+            _ => None,
+        };
+
+        if let Some(op) = op {
+            self.advance();
+            let rhs = self.assign();
+            return Expr::Assign {
+                lhs: Box::new(node.clone()),
+                rhs: Box::new(Expr::BinOp {
+                    op,
+                    lhs: Box::new(node),
+                    rhs: Box::new(rhs),
+                }),
             };
         }
 

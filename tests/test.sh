@@ -97,6 +97,13 @@ assert 3 'int main() { { return 3; } }'
 assert 5 'int main() { { int a = 2; int b = 3; return a + b; } }'
 assert 55 'int main() { int s = 0; int i = 1; while (i <= 10) { s = s + i; i = i + 1; } return s; }'
 
+# Step 2.9: compound assignment operators
+assert 15 'int main() { int a = 10; a += 5; return a; }'
+assert 5 'int main() { int a = 10; a -= 5; return a; }'
+assert 20 'int main() { int a = 10; a *= 2; return a; }'
+assert 5 'int main() { int a = 10; a /= 2; return a; }'
+assert 1 'int main() { int a = 10; a %= 3; return a; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
