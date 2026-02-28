@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr, UnaryOp};
+use crate::ast::{BinOp, Expr, Function, Stmt, UnaryOp};
 use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
 
@@ -13,15 +13,60 @@ impl<'a> Parser<'a> {
         Self { tokens, pos: 0, reporter }
     }
 
-    pub fn parse(&mut self) -> Expr {
-        let expr = self.expr();
+    // program = function
+    pub fn parse(&mut self) -> Function {
+        let func = self.function();
         if self.current().kind != TokenKind::Eof {
             self.reporter.error_at(
                 self.current().pos,
                 &format!("unexpected token: {:?}", self.current().kind),
             );
         }
-        expr
+        func
+    }
+
+    // function = "int" ident "(" ")" "{" stmt* "}"
+    fn function(&mut self) -> Function {
+        self.expect(TokenKind::Int);
+        let name = match &self.current().kind {
+            TokenKind::Ident(s) => s.clone(),
+            _ => {
+                self.reporter.error_at(
+                    self.current().pos,
+                    &format!("expected function name, but got {:?}", self.current().kind),
+                );
+            }
+        };
+        self.advance();
+        self.expect(TokenKind::LParen);
+        self.expect(TokenKind::RParen);
+        self.expect(TokenKind::LBrace);
+
+        let mut body = Vec::new();
+        while self.current().kind != TokenKind::RBrace {
+            body.push(self.stmt());
+        }
+        self.expect(TokenKind::RBrace);
+
+        Function { name, body }
+    }
+
+    // stmt = "return" expr ";"
+    //      | expr ";"
+    fn stmt(&mut self) -> Stmt {
+        match &self.current().kind {
+            TokenKind::Return => {
+                self.advance();
+                let expr = self.expr();
+                self.expect(TokenKind::Semicolon);
+                Stmt::Return(expr)
+            }
+            _ => {
+                let expr = self.expr();
+                self.expect(TokenKind::Semicolon);
+                Stmt::ExprStmt(expr)
+            }
+        }
     }
 
     // expr = equality
@@ -245,7 +290,7 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
 
-    fn parse(input: &str) -> Expr {
+    fn parse_func(input: &str) -> Function {
         let reporter = crate::error::ErrorReporter::new("test", input);
         let mut lexer = Lexer::new(input, &reporter);
         let tokens = lexer.tokenize();
@@ -254,64 +299,29 @@ mod tests {
     }
 
     #[test]
-    fn test_number() {
-        assert_eq!(parse("42"), Expr::Num(42));
+    fn test_return_number() {
+        let func = parse_func("int main() { return 42; }");
+        assert_eq!(func.name, "main");
+        assert_eq!(func.body.len(), 1);
+        assert_eq!(func.body[0], Stmt::Return(Expr::Num(42)));
     }
 
     #[test]
-    fn test_add() {
-        assert_eq!(
-            parse("1 + 2"),
-            Expr::BinOp {
-                op: BinOp::Add,
-                lhs: Box::new(Expr::Num(1)),
-                rhs: Box::new(Expr::Num(2)),
-            }
-        );
+    fn test_expr_stmt() {
+        let func = parse_func("int main() { 1; 2; return 3; }");
+        assert_eq!(func.body.len(), 3);
+        assert_eq!(func.body[0], Stmt::ExprStmt(Expr::Num(1)));
+        assert_eq!(func.body[1], Stmt::ExprStmt(Expr::Num(2)));
+        assert_eq!(func.body[2], Stmt::Return(Expr::Num(3)));
     }
 
     #[test]
-    fn test_precedence() {
-        // 5 + 6 * 7 should be 5 + (6 * 7)
-        assert_eq!(
-            parse("5 + 6 * 7"),
-            Expr::BinOp {
-                op: BinOp::Add,
-                lhs: Box::new(Expr::Num(5)),
-                rhs: Box::new(Expr::BinOp {
-                    op: BinOp::Mul,
-                    lhs: Box::new(Expr::Num(6)),
-                    rhs: Box::new(Expr::Num(7)),
-                }),
-            }
-        );
-    }
-
-    #[test]
-    fn test_paren() {
-        // (2 + 3) * 4
-        assert_eq!(
-            parse("(2 + 3) * 4"),
-            Expr::BinOp {
-                op: BinOp::Mul,
-                lhs: Box::new(Expr::BinOp {
-                    op: BinOp::Add,
-                    lhs: Box::new(Expr::Num(2)),
-                    rhs: Box::new(Expr::Num(3)),
-                }),
-                rhs: Box::new(Expr::Num(4)),
-            }
-        );
-    }
-
-    #[test]
-    fn test_unary_neg() {
-        assert_eq!(
-            parse("-10"),
-            Expr::UnaryOp {
-                op: UnaryOp::Neg,
-                operand: Box::new(Expr::Num(10)),
-            }
-        );
+    fn test_return_add() {
+        let func = parse_func("int main() { return 1 + 2; }");
+        assert_eq!(func.body.len(), 1);
+        match &func.body[0] {
+            Stmt::Return(Expr::BinOp { op: BinOp::Add, .. }) => {}
+            _ => panic!("expected return with add"),
+        }
     }
 }

@@ -27,6 +27,19 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            // Identifiers and keywords
+            if ch.is_ascii_alphabetic() || ch == '_' {
+                let pos = self.pos;
+                let word = self.read_ident();
+                let kind = match word.as_str() {
+                    "return" => TokenKind::Return,
+                    "int" => TokenKind::Int,
+                    _ => TokenKind::Ident(word),
+                };
+                tokens.push(Token { kind, pos });
+                continue;
+            }
+
             if ch.is_ascii_digit() {
                 let pos = self.pos;
                 let val = self.read_number();
@@ -71,6 +84,9 @@ impl<'a> Lexer<'a> {
                 '>' => TokenKind::Gt,
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
+                '{' => TokenKind::LBrace,
+                '}' => TokenKind::RBrace,
+                ';' => TokenKind::Semicolon,
                 _ => {
                     self.reporter.error_at(self.pos, &format!("unexpected character '{}'", ch));
                 }
@@ -93,6 +109,19 @@ impl<'a> Lexer<'a> {
         } else {
             None
         }
+    }
+
+    fn read_ident(&mut self) -> String {
+        let start = self.pos;
+        while self.pos < self.input.len() {
+            let c = self.input[self.pos] as char;
+            if c.is_ascii_alphanumeric() || c == '_' {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        String::from_utf8(self.input[start..self.pos].to_vec()).unwrap()
     }
 
     fn read_number(&mut self) -> i64 {
@@ -131,6 +160,24 @@ mod tests {
         assert_eq!(tokens[1].kind, TokenKind::Plus);
         assert_eq!(tokens[2].kind, TokenKind::Num(2));
         assert_eq!(tokens[3].kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn test_keywords_and_ident() {
+        let tokens = tokenize("int main return");
+        assert_eq!(tokens[0].kind, TokenKind::Int);
+        assert_eq!(tokens[1].kind, TokenKind::Ident("main".to_string()));
+        assert_eq!(tokens[2].kind, TokenKind::Return);
+    }
+
+    #[test]
+    fn test_braces_semicolon() {
+        let tokens = tokenize("{ return 42; }");
+        assert_eq!(tokens[0].kind, TokenKind::LBrace);
+        assert_eq!(tokens[1].kind, TokenKind::Return);
+        assert_eq!(tokens[2].kind, TokenKind::Num(42));
+        assert_eq!(tokens[3].kind, TokenKind::Semicolon);
+        assert_eq!(tokens[4].kind, TokenKind::RBrace);
     }
 
     #[test]

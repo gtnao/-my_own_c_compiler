@@ -1,6 +1,11 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Num(i64),
+    Ident(String),
+    // Keywords
+    Return,
+    Int,
+    // Operators
     Plus,
     Minus,
     Star,
@@ -14,6 +19,9 @@ pub enum TokenKind {
     Ge,
     LParen,
     RParen,
+    LBrace,
+    RBrace,
+    Semicolon,
     Eof,
 }
 

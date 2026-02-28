@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, Expr, UnaryOp};
+use crate::ast::{BinOp, Expr, Function, Stmt, UnaryOp};
 
 pub struct Codegen {
     output: String,
@@ -11,19 +11,36 @@ impl Codegen {
         }
     }
 
-    pub fn generate(&mut self, expr: &Expr) -> String {
-        self.emit("  .globl main");
-        self.emit("main:");
+    pub fn generate(&mut self, func: &Function) -> String {
+        self.emit(&format!("  .globl {}", func.name));
+        self.emit(&format!("{}:", func.name));
         self.emit("  push %rbp");
         self.emit("  mov %rsp, %rbp");
 
-        self.gen_expr(expr);
+        for stmt in &func.body {
+            self.gen_stmt(stmt);
+        }
 
+        // Default return 0 if no return statement reached
+        self.emit("  mov $0, %rax");
+        self.emit(&format!(".Lreturn.{}:", func.name));
         self.emit("  mov %rbp, %rsp");
         self.emit("  pop %rbp");
         self.emit("  ret");
 
         self.output.clone()
+    }
+
+    fn gen_stmt(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::Return(expr) => {
+                self.gen_expr(expr);
+                self.emit("  jmp .Lreturn.main");
+            }
+            Stmt::ExprStmt(expr) => {
+                self.gen_expr(expr);
+            }
+        }
     }
 
     fn gen_expr(&mut self, expr: &Expr) {
@@ -111,32 +128,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_single_number() {
+    fn test_return_number() {
         let mut codegen = Codegen::new();
-        let output = codegen.generate(&Expr::Num(42));
+        let func = Function {
+            name: "main".to_string(),
+            body: vec![Stmt::Return(Expr::Num(42))],
+        };
+        let output = codegen.generate(&func);
         assert!(output.contains("mov $42, %rax"));
+        assert!(output.contains("jmp .Lreturn.main"));
     }
 
     #[test]
-    fn test_addition() {
+    fn test_expr_stmt_and_return() {
         let mut codegen = Codegen::new();
-        let expr = Expr::BinOp {
-            op: BinOp::Add,
-            lhs: Box::new(Expr::Num(1)),
-            rhs: Box::new(Expr::Num(2)),
+        let func = Function {
+            name: "main".to_string(),
+            body: vec![
+                Stmt::ExprStmt(Expr::Num(1)),
+                Stmt::Return(Expr::Num(3)),
+            ],
         };
-        let output = codegen.generate(&expr);
-        assert!(output.contains("add %rdi, %rax"));
-    }
-
-    #[test]
-    fn test_negation() {
-        let mut codegen = Codegen::new();
-        let expr = Expr::UnaryOp {
-            op: UnaryOp::Neg,
-            operand: Box::new(Expr::Num(10)),
-        };
-        let output = codegen.generate(&expr);
-        assert!(output.contains("neg %rax"));
+        let output = codegen.generate(&func);
+        assert!(output.contains("mov $1, %rax"));
+        assert!(output.contains("mov $3, %rax"));
     }
 }

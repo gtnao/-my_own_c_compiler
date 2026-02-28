@@ -31,3 +31,15 @@ pub enum Expr {
         operand: Box<Expr>,
     },
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Return(Expr),
+    ExprStmt(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub name: String,
+    pub body: Vec<Stmt>,
+}
