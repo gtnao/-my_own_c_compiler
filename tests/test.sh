@@ -409,6 +409,14 @@ assert 10 'int main() { struct { int a; int b; int c; } s = {1, 2, 7}; return s.
 assert 42 'int main() { struct { int x; } s = {42}; return s.x; }'
 assert 3 'int main() { struct S { int x; int y; }; struct S s = {1, 2}; return s.x + s.y; }'
 
+# Step 10.1: comments
+assert 42 'int main() { return 42; // this is a comment
+}'
+assert 3 'int main() { /* comment */ return 3; }'
+assert 5 'int main() { int a = 5; /* set a */ return a; }'
+assert 10 'int main() { int a = 10; // set a
+return a; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

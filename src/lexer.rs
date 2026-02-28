@@ -27,6 +27,27 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            // Line comment: //
+            if ch == '/' && self.peek_next() == Some('/') {
+                while self.pos < self.input.len() && self.input[self.pos] != b'\n' {
+                    self.pos += 1;
+                }
+                continue;
+            }
+
+            // Block comment: /* ... */
+            if ch == '/' && self.peek_next() == Some('*') {
+                self.pos += 2;
+                while self.pos + 1 < self.input.len() {
+                    if self.input[self.pos] == b'*' && self.input[self.pos + 1] == b'/' {
+                        self.pos += 2;
+                        break;
+                    }
+                    self.pos += 1;
+                }
+                continue;
+            }
+
             // Identifiers and keywords
             if ch.is_ascii_alphabetic() || ch == '_' {
                 let pos = self.pos;
