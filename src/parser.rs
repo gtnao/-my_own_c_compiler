@@ -1043,7 +1043,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Typeof | TokenKind::Auto => {
+            TokenKind::Void | TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Typeof | TokenKind::Auto => {
                 self.var_decl()
             }
             _ => {
