@@ -455,6 +455,12 @@ assert 30 'int main() { struct { int a; int b; int c; } s = {.b = 20, .c = 30}; 
 assert 20 'int main() { struct { int a; int b; int c; } s = {.b = 20, .c = 30}; return s.b; }'
 assert 5 'int main() { struct { int x; int y; } p = {.x = 5, .y = 10}; return p.x; }'
 
+# Step 9.4: compound literals
+assert 3 'int main() { int *p = (int[]){1, 2, 3}; return p[2]; }'
+assert 1 'int main() { int *p = (int[]){1, 2, 3}; return p[0]; }'
+assert 6 'int main() { int *p = (int[3]){1, 2, 3}; return p[0] + p[1] + p[2]; }'
+assert 10 'int main() { return ((struct { int a; int b; }){3, 7}).a + ((struct { int a; int b; }){3, 7}).b; }'
+
 # Step 12.3: string initialization for char arrays
 assert 104 'int main() { char s[] = "hello"; return s[0]; }'
 assert 111 'int main() { char s[] = "hello"; return s[4]; }'

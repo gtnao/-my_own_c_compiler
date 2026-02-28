@@ -662,6 +662,11 @@ impl Codegen {
                     }
                 }
             }
+            Expr::Comma(lhs, rhs) => {
+                // Evaluate lhs for side effects, then get address of rhs
+                self.gen_expr(lhs);
+                self.gen_addr(rhs);
+            }
             _ => {}
         }
     }
@@ -717,6 +722,7 @@ impl Codegen {
                     _ => Type::long_type(),
                 }
             }
+            Expr::Comma(_, rhs) => self.expr_type(rhs),
             _ => Type::long_type(),
         }
     }

@@ -1322,14 +1322,46 @@ impl<'a> Parser<'a> {
                 Expr::PreDec(Box::new(operand))
             }
             _ => {
-                // Cast expression: "(" type ")" unary
+                // Cast expression or compound literal: "(" type ")" ...
                 if self.current().kind == TokenKind::LParen
                     && self.pos + 1 < self.tokens.len()
                     && Self::is_type_keyword(&self.tokens[self.pos + 1].kind)
                 {
                     self.advance(); // consume "("
-                    let ty = self.parse_type();
+                    let mut ty = self.parse_type();
+
+                    // Parse optional array dimensions: (int[3]) or (int[])
+                    let mut has_empty_bracket = false;
+                    while self.current().kind == TokenKind::LBracket {
+                        self.advance();
+                        if self.current().kind == TokenKind::RBracket {
+                            has_empty_bracket = true;
+                            self.advance();
+                            ty = Type::array_of(ty, 0); // placeholder
+                        } else {
+                            let n = match &self.current().kind {
+                                TokenKind::Num(n) => *n as usize,
+                                _ => {
+                                    self.reporter.error_at(
+                                        self.current().pos,
+                                        "expected array size",
+                                    );
+                                }
+                            };
+                            self.advance();
+                            self.expect(TokenKind::RBracket);
+                            ty = Type::array_of(ty, n);
+                        }
+                    }
+
                     self.expect(TokenKind::RParen);
+
+                    if self.current().kind == TokenKind::LBrace {
+                        // Compound literal: (type){initializers}
+                        return self.parse_compound_literal(ty, has_empty_bracket);
+                    }
+
+                    // Regular cast
                     let operand = self.unary();
                     return Expr::Cast {
                         ty,
@@ -1455,6 +1487,161 @@ impl<'a> Parser<'a> {
                 );
             }
         }
+    }
+
+    /// Parse compound literal: (type){initializers}
+    /// Desugars to an anonymous variable initialized via comma expressions.
+    fn parse_compound_literal(&mut self, ty: Type, has_empty_bracket: bool) -> Expr {
+        self.advance(); // consume "{"
+
+        // Generate anonymous variable
+        self.unique_counter += 1;
+        let anon_name = format!("__compound_{}", self.unique_counter);
+
+        if let crate::types::TypeKind::Struct(ref members) = ty.kind {
+            // Struct compound literal
+            let members_list = members.clone();
+            let unique = self.declare_var(&anon_name, ty.clone());
+            let mut assigns: Vec<Expr> = Vec::new();
+            let mut seq_idx = 0;
+
+            while self.current().kind != TokenKind::RBrace {
+                if self.current().kind == TokenKind::Dot {
+                    self.advance();
+                    let mem_name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected member name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::Eq);
+                    let val = self.assign();
+                    assigns.push(Expr::Assign {
+                        lhs: Box::new(Expr::Member(
+                            Box::new(Expr::Var(unique.clone())),
+                            mem_name.clone(),
+                        )),
+                        rhs: Box::new(val),
+                    });
+                    if let Some(pos) = members_list.iter().position(|m| m.name == mem_name) {
+                        seq_idx = pos + 1;
+                    }
+                } else {
+                    let val = self.assign();
+                    if seq_idx < members_list.len() {
+                        let mem_name = members_list[seq_idx].name.clone();
+                        assigns.push(Expr::Assign {
+                            lhs: Box::new(Expr::Member(
+                                Box::new(Expr::Var(unique.clone())),
+                                mem_name,
+                            )),
+                            rhs: Box::new(val),
+                        });
+                    }
+                    seq_idx += 1;
+                }
+                if self.current().kind == TokenKind::Comma {
+                    self.advance();
+                }
+            }
+            self.expect(TokenKind::RBrace);
+
+            // Chain assignments via comma operator, ending with variable reference
+            self.build_comma_chain(assigns, unique)
+        } else {
+            // Array/scalar compound literal
+            let mut indexed_exprs: Vec<(usize, Expr)> = Vec::new();
+            let mut seq_idx: usize = 0;
+            let mut max_idx: usize = 0;
+
+            while self.current().kind != TokenKind::RBrace {
+                if self.current().kind == TokenKind::LBracket {
+                    self.advance();
+                    let idx = match &self.current().kind {
+                        TokenKind::Num(n) => *n as usize,
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected array index",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RBracket);
+                    self.expect(TokenKind::Eq);
+                    let val = self.assign();
+                    indexed_exprs.push((idx, val));
+                    if idx + 1 > max_idx { max_idx = idx + 1; }
+                    seq_idx = idx + 1;
+                } else {
+                    let val = self.assign();
+                    indexed_exprs.push((seq_idx, val));
+                    seq_idx += 1;
+                    if seq_idx > max_idx { max_idx = seq_idx; }
+                }
+                if self.current().kind == TokenKind::Comma {
+                    self.advance();
+                }
+            }
+            self.expect(TokenKind::RBrace);
+
+            // Determine array type
+            let ty = if has_empty_bracket {
+                let base = ty.base_type().unwrap().clone();
+                Type::array_of(base, max_idx)
+            } else if matches!(ty.kind, crate::types::TypeKind::Array(_, _)) {
+                ty
+            } else {
+                // Scalar compound literal: (int){5}
+                ty
+            };
+
+            let unique = self.declare_var(&anon_name, ty);
+
+            let assigns: Vec<Expr> = if indexed_exprs.len() == 1 && !matches!(self.local_types_last(&unique), Some(ty) if matches!(ty.kind, crate::types::TypeKind::Array(_, _))) {
+                // Scalar: just assign directly
+                vec![Expr::Assign {
+                    lhs: Box::new(Expr::Var(unique.clone())),
+                    rhs: Box::new(indexed_exprs.into_iter().next().unwrap().1),
+                }]
+            } else {
+                // Array: element-by-element assignment
+                indexed_exprs.into_iter().map(|(idx, val)| {
+                    Expr::Assign {
+                        lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
+                            op: BinOp::Add,
+                            lhs: Box::new(Expr::Var(unique.clone())),
+                            rhs: Box::new(Expr::Num(idx as i64)),
+                        }))),
+                        rhs: Box::new(val),
+                    }
+                }).collect()
+            };
+
+            self.build_comma_chain(assigns, unique)
+        }
+    }
+
+    /// Build a comma chain: (assign1, (assign2, (..., var)))
+    fn build_comma_chain(&self, assigns: Vec<Expr>, var_name: String) -> Expr {
+        let var_ref = Expr::Var(var_name);
+        if assigns.is_empty() {
+            return var_ref;
+        }
+        let mut node = var_ref;
+        for assign in assigns.into_iter().rev() {
+            node = Expr::Comma(Box::new(assign), Box::new(node));
+        }
+        node
+    }
+
+    /// Look up the type of the last declared variable with this name.
+    fn local_types_last(&self, name: &str) -> Option<&Type> {
+        self.locals.iter().rev().find(|(_, n)| n == name).map(|(ty, _)| ty)
     }
 
     fn current(&self) -> &Token {
