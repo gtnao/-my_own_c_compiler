@@ -116,7 +116,7 @@ impl<'a> Parser<'a> {
             return true;
         }
         if let TokenKind::Ident(name) = kind {
-            return self.typedefs.contains_key(name) || name == "va_list";
+            return self.typedefs.contains_key(name) || name == "va_list" || name == "__builtin_va_list";
         }
         false
     }
@@ -629,7 +629,7 @@ impl<'a> Parser<'a> {
                     // bare "signed" = "signed int" = "int"
                     Type::int_type()
                 } else if let TokenKind::Ident(name) = &self.current().kind {
-                    if name == "va_list" {
+                    if name == "va_list" || name == "__builtin_va_list" {
                         // va_list is treated as char* (pointer to register save area)
                         self.advance();
                         Type::ptr_to(Type::char_type())
@@ -1025,7 +1025,7 @@ impl<'a> Parser<'a> {
             _ => {
                 // Check for typedef name or va_list as type
                 if let TokenKind::Ident(name) = &self.current().kind {
-                    if self.typedefs.contains_key(name) || name == "va_list" {
+                    if self.typedefs.contains_key(name) || name == "va_list" || name == "__builtin_va_list" {
                         return self.var_decl();
                     }
                 }
@@ -2000,7 +2000,7 @@ impl<'a> Parser<'a> {
                 self.advance();
 
                 // va_start(ap, last_param)
-                if name == "va_start" {
+                if name == "va_start" || name == "__builtin_va_start" {
                     self.expect(TokenKind::LParen);
                     let ap = self.assign();
                     self.expect(TokenKind::Comma);
@@ -2023,7 +2023,7 @@ impl<'a> Parser<'a> {
                 }
 
                 // va_arg(ap, type)
-                if name == "va_arg" {
+                if name == "va_arg" || name == "__builtin_va_arg" {
                     self.expect(TokenKind::LParen);
                     let ap = self.assign();
                     self.expect(TokenKind::Comma);
@@ -2036,11 +2036,92 @@ impl<'a> Parser<'a> {
                 }
 
                 // va_end(ap) — no-op, evaluates to 0
-                if name == "va_end" {
+                if name == "va_end" || name == "__builtin_va_end" {
                     self.expect(TokenKind::LParen);
                     let _ap = self.assign();
                     self.expect(TokenKind::RParen);
                     return Expr::Num(0);
+                }
+
+                // va_copy(dest, src) — no-op, evaluates to 0
+                if name == "va_copy" || name == "__va_copy" || name == "__builtin_va_copy" {
+                    self.expect(TokenKind::LParen);
+                    let _dest = self.assign();
+                    self.expect(TokenKind::Comma);
+                    let _src = self.assign();
+                    self.expect(TokenKind::RParen);
+                    return Expr::Num(0);
+                }
+
+                // __builtin_expect(expr, expected) → returns expr
+                if name == "__builtin_expect" {
+                    self.expect(TokenKind::LParen);
+                    let expr = self.assign();
+                    self.expect(TokenKind::Comma);
+                    let _expected = self.assign();
+                    self.expect(TokenKind::RParen);
+                    return expr;
+                }
+
+                // __builtin_constant_p(expr) → always 0 (we don't optimize)
+                if name == "__builtin_constant_p" {
+                    self.expect(TokenKind::LParen);
+                    let _expr = self.assign();
+                    self.expect(TokenKind::RParen);
+                    return Expr::Num(0);
+                }
+
+                // __builtin_unreachable() → no-op
+                if name == "__builtin_unreachable" {
+                    self.expect(TokenKind::LParen);
+                    self.expect(TokenKind::RParen);
+                    return Expr::Num(0);
+                }
+
+                // __builtin_offsetof(type, member) → byte offset
+                if name == "__builtin_offsetof" {
+                    self.expect(TokenKind::LParen);
+                    let ty = self.parse_type();
+                    self.expect(TokenKind::Comma);
+                    let member_name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected member name in __builtin_offsetof",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RParen);
+                    // Find offset in struct
+                    if let crate::types::TypeKind::Struct(members) = &ty.kind {
+                        for m in members {
+                            if m.name == member_name {
+                                return Expr::Num(m.offset as i64);
+                            }
+                        }
+                        self.reporter.error_at(
+                            self.current().pos,
+                            &format!("no member '{}' in struct", member_name),
+                        );
+                    } else {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "__builtin_offsetof requires a struct type",
+                        );
+                    }
+                }
+
+                // __builtin_types_compatible_p(type1, type2) → 1 if compatible, 0 if not
+                if name == "__builtin_types_compatible_p" {
+                    self.expect(TokenKind::LParen);
+                    let ty1 = self.parse_type();
+                    self.expect(TokenKind::Comma);
+                    let ty2 = self.parse_type();
+                    self.expect(TokenKind::RParen);
+                    let compatible = ty1.kind == ty2.kind && ty1.is_unsigned == ty2.is_unsigned;
+                    return Expr::Num(if compatible { 1 } else { 0 });
                 }
 
                 // Function call: ident "(" args ")"

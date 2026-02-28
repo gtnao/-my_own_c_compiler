@@ -755,6 +755,15 @@ assert 10 'int main() { register int i; i = 10; return i; }'
 assert 5 'int main() { __extension__ int a = 5; return a; }'
 assert 3 'int main() { return __extension__ 3; }'
 
+# Step 14.11: __builtin_* functions
+assert 5 'int main() { return __builtin_expect(5, 1); }'
+assert 0 'int main() { return __builtin_constant_p(42); }'
+assert 42 'int main() { int x = 42; return __builtin_expect(x, 1); }'
+assert 4 'struct S { int a; int b; }; int main() { return __builtin_offsetof(struct S, b); }'
+assert 0 'struct S { int a; int b; }; int main() { return __builtin_offsetof(struct S, a); }'
+assert 1 'int main() { return __builtin_types_compatible_p(int, int); }'
+assert 0 'int main() { return __builtin_types_compatible_p(int, long); }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
