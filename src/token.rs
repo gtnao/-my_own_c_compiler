@@ -44,6 +44,7 @@ pub enum TokenKind {
     Attribute,
     Inline,
     Noreturn,
+    Auto,
     Extension,
     Register,
     Restrict,
