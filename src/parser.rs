@@ -892,10 +892,18 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Sizeof => {
                 self.advance();
-                self.expect(TokenKind::LParen);
-                let ty = self.parse_type();
-                self.expect(TokenKind::RParen);
-                return Expr::SizeofType(ty);
+                // sizeof(type) vs sizeof expr
+                if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && Self::is_type_keyword(&self.tokens[self.pos + 1].kind)
+                {
+                    self.advance(); // consume "("
+                    let ty = self.parse_type();
+                    self.expect(TokenKind::RParen);
+                    return Expr::SizeofType(ty);
+                }
+                let operand = self.unary();
+                return Expr::SizeofExpr(Box::new(operand));
             }
             TokenKind::PlusPlus => {
                 self.advance();

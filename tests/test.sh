@@ -286,6 +286,16 @@ assert 6 'int a[3]; int main() { a[0] = 1; a[1] = 2; a[2] = 3; return a[0] + a[1
 assert 42 'int a[2][3]; int main() { a[1][2] = 42; return a[1][2]; }'
 assert 10 'int a[5]; int main() { int i; for (i = 0; i < 5; i++) a[i] = i; int s = 0; for (i = 0; i < 5; i++) s += a[i]; return s; }'
 
+# Step 5.6: sizeof with arrays and expressions
+assert 12 'int main() { int a[3]; return sizeof(a); }'
+assert 4 'int main() { int a[3]; return sizeof(a[0]); }'
+assert 24 'int main() { int a[2][3]; return sizeof(a); }'
+assert 12 'int main() { int a[2][3]; return sizeof(a[0]); }'
+assert 4 'int main() { int x = 5; return sizeof(x); }'
+assert 8 'int main() { int *p; return sizeof(p); }'
+assert 3 'int main() { char a[3]; return sizeof(a); }'
+assert 1 'int main() { char a[3]; return sizeof(a[0]); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

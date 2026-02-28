@@ -65,6 +65,7 @@ pub enum Expr {
         expr: Box<Expr>,
     },
     SizeofType(Type),
+    SizeofExpr(Box<Expr>),
     Addr(Box<Expr>),
     Deref(Box<Expr>),
 }

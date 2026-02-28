@@ -476,6 +476,10 @@ impl Codegen {
             Expr::SizeofType(ty) => {
                 self.emit(&format!("  mov ${}, %rax", ty.size()));
             }
+            Expr::SizeofExpr(expr) => {
+                let ty = self.expr_type(expr);
+                self.emit(&format!("  mov ${}, %rax", ty.size()));
+            }
             Expr::Cast { ty, expr } => {
                 self.gen_expr(expr);
                 // Truncate and re-extend to target type
