@@ -921,6 +921,11 @@ int main() { return 0; }
 assert 8 '#define PTRSIZE __SIZEOF_POINTER__
 int main() { return PTRSIZE; }'
 
+# Step 16.7: Backslash continuation lines
+assert 30 '#define ADD(a, b) \
+    ((a) + (b))
+int main() { return ADD(10, 20); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

@@ -58,12 +58,29 @@ pub fn preprocess(source: &str, file_path: &str) -> String {
     preprocess_recursive(source, file_path, &mut included, &mut macros)
 }
 
+/// Join backslash-continuation lines before processing.
+fn join_continuation_lines(source: &str) -> String {
+    let mut result = String::new();
+    let mut lines = source.lines().peekable();
+    while let Some(line) = lines.next() {
+        if line.ends_with('\\') {
+            // Continuation: append without the trailing backslash
+            result.push_str(&line[..line.len() - 1]);
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+    result
+}
+
 fn preprocess_recursive(
     source: &str,
     file_path: &str,
     included: &mut HashSet<PathBuf>,
     macros: &mut HashMap<String, MacroDef>,
 ) -> String {
+    let source = join_continuation_lines(source);
     let dir = Path::new(file_path).parent().unwrap_or(Path::new("."));
     let mut result = String::new();
     // Conditional compilation stack: true = active, false = skipped
