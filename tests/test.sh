@@ -44,6 +44,11 @@ assert 3 '1+2'
 assert 5 '10-5'
 assert 15 '1+2+3+4+5'
 
+# Step 1.3: whitespace handling
+assert 41 ' 12 + 34 - 5 '
+assert 21 ' 5 + 20 - 4 '
+assert 10 '  10  '
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

@@ -1,6 +1,12 @@
+mod lexer;
+mod token;
+
 use std::env;
 use std::fs;
 use std::process;
+
+use crate::lexer::Lexer;
+use crate::token::TokenKind;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -14,52 +20,46 @@ fn main() {
         process::exit(1);
     });
 
-    let input = input.trim();
-    let bytes = input.as_bytes();
+    let mut lexer = Lexer::new(input.trim());
+    let tokens = lexer.tokenize();
+
     let mut pos = 0;
 
-    let val = read_number(bytes, &mut pos);
+    // Expect the first token to be a number
+    let val = expect_number(&tokens, &mut pos);
 
     println!("  .globl main");
     println!("main:");
     println!("  mov ${}, %rax", val);
 
-    while pos < bytes.len() {
-        let ch = bytes[pos] as char;
-        if ch == '+' {
-            pos += 1;
-            let val = read_number(bytes, &mut pos);
-            println!("  add ${}, %rax", val);
-        } else if ch == '-' {
-            pos += 1;
-            let val = read_number(bytes, &mut pos);
-            println!("  sub ${}, %rax", val);
-        } else {
-            eprintln!("Unexpected character: '{}'", ch);
-            process::exit(1);
+    while tokens[pos].kind != TokenKind::Eof {
+        match tokens[pos].kind {
+            TokenKind::Plus => {
+                pos += 1;
+                let val = expect_number(&tokens, &mut pos);
+                println!("  add ${}, %rax", val);
+            }
+            TokenKind::Minus => {
+                pos += 1;
+                let val = expect_number(&tokens, &mut pos);
+                println!("  sub ${}, %rax", val);
+            }
+            _ => {
+                eprintln!("Unexpected token: {:?}", tokens[pos].kind);
+                process::exit(1);
+            }
         }
     }
 
     println!("  ret");
 }
 
-fn read_number(bytes: &[u8], pos: &mut usize) -> i64 {
-    let start = *pos;
-    while *pos < bytes.len() && (bytes[*pos] as char).is_ascii_digit() {
+fn expect_number(tokens: &[token::Token], pos: &mut usize) -> i64 {
+    if let TokenKind::Num(val) = tokens[*pos].kind {
         *pos += 1;
-    }
-    if start == *pos {
-        eprintln!(
-            "Expected a number at position {}, but got '{}'",
-            start,
-            if *pos < bytes.len() {
-                bytes[*pos] as char
-            } else {
-                '\0'
-            }
-        );
+        val
+    } else {
+        eprintln!("Expected a number, but got {:?}", tokens[*pos].kind);
         process::exit(1);
     }
-    let s = std::str::from_utf8(&bytes[start..*pos]).unwrap();
-    s.parse().unwrap()
 }
