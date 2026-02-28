@@ -476,6 +476,8 @@ impl Codegen {
                     self.pop(arg_regs[i]);
                 }
 
+                // Set %al to 0 for variadic functions (number of vector registers used)
+                self.emit("  mov $0, %al");
                 self.emit(&format!("  call {}", name));
 
                 if num_stack_args > 0 {

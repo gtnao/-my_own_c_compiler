@@ -29,6 +29,24 @@ assert() {
   fi
 }
 
+assert_output() {
+  expected_output="$1"
+  input="$2"
+
+  echo "$input" > "$TMPDIR/tmp.c"
+  $COMPILER "$TMPDIR/tmp.c" > "$TMPDIR/tmp.s"
+  gcc -o "$TMPDIR/tmp" "$TMPDIR/tmp.s"
+  actual_output=$("$TMPDIR/tmp")
+
+  if [ "$actual_output" = "$expected_output" ]; then
+    echo "OK: output '$actual_output'"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: output '$actual_output' (expected '$expected_output')"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 # Step 2.1: return statement and expression statement
 assert 0 'int main() { return 0; }'
 assert 42 'int main() { return 42; }'
@@ -416,6 +434,11 @@ assert 3 'int main() { /* comment */ return 3; }'
 assert 5 'int main() { int a = 5; /* set a */ return a; }'
 assert 10 'int main() { int a = 10; // set a
 return a; }'
+
+# Step 11.1: printf/libc calls
+assert_output 'hello' 'int printf(); int main() { printf("hello"); return 0; }'
+assert_output '42' 'int printf(); int main() { printf("%d", 42); return 0; }'
+assert_output '3 + 4 = 7' 'int printf(); int main() { printf("%d + %d = %d", 3, 4, 3+4); return 0; }'
 
 echo ""
 echo "--- Results ---"
