@@ -15,6 +15,7 @@ pub struct Parser<'a> {
     globals: Vec<(Type, String)>,
     struct_tags: HashMap<String, Type>,
     enum_values: HashMap<String, i64>,
+    typedefs: HashMap<String, Type>,
 }
 
 impl<'a> Parser<'a> {
@@ -29,13 +30,32 @@ impl<'a> Parser<'a> {
             globals: Vec::new(),
             struct_tags: HashMap::new(),
             enum_values: HashMap::new(),
+            typedefs: HashMap::new(),
         }
     }
 
-    // program = (function | prototype | global_var)*
+    // program = (typedef | function | prototype | global_var)*
     pub fn parse(&mut self) -> Program {
         let mut functions = Vec::new();
         while self.current().kind != TokenKind::Eof {
+            // Handle top-level typedef
+            if self.current().kind == TokenKind::Typedef {
+                self.advance();
+                let ty = self.parse_type();
+                let name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected typedef name",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+                self.typedefs.insert(name, ty);
+                continue;
+            }
             if self.is_function() {
                 if let Some(func) = self.function_or_prototype() {
                     functions.push(func);
@@ -54,15 +74,25 @@ impl<'a> Parser<'a> {
         matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum)
     }
 
+    fn is_type_start(&self, kind: &TokenKind) -> bool {
+        if Self::is_type_keyword(kind) {
+            return true;
+        }
+        if let TokenKind::Ident(name) = kind {
+            return self.typedefs.contains_key(name);
+        }
+        false
+    }
+
     fn is_function(&self) -> bool {
         // type ident "(" → function/prototype
         // Handles multi-token types like "unsigned int"
-        if !Self::is_type_keyword(&self.tokens[self.pos].kind) {
+        if !self.is_type_start(&self.tokens[self.pos].kind) {
             return false;
         }
         let mut i = self.pos;
-        // Skip type keywords
-        while Self::is_type_keyword(&self.tokens[i].kind) {
+        // Skip type keywords (including typedef names)
+        while self.is_type_start(&self.tokens[i].kind) {
             // For "struct"/"union", skip optional tag name and body
             if self.tokens[i].kind == TokenKind::Struct || self.tokens[i].kind == TokenKind::Union || self.tokens[i].kind == TokenKind::Enum {
                 i += 1;
@@ -304,6 +334,16 @@ impl<'a> Parser<'a> {
                 if is_unsigned {
                     // bare "unsigned" = "unsigned int"
                     Type::uint()
+                } else if let TokenKind::Ident(name) = &self.current().kind {
+                    if let Some(ty) = self.typedefs.get(name).cloned() {
+                        self.advance();
+                        ty
+                    } else {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            &format!("expected type, but got {:?}", self.current().kind),
+                        );
+                    }
                 } else {
                     self.reporter.error_at(
                         self.current().pos,
@@ -591,10 +631,33 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
+            TokenKind::Typedef => {
+                self.advance();
+                let ty = self.parse_type();
+                let name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected typedef name",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+                self.typedefs.insert(name, ty);
+                Stmt::Block(vec![])
+            }
             TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum => {
                 self.var_decl()
             }
             _ => {
+                // Check for typedef name as type
+                if let TokenKind::Ident(name) = &self.current().kind {
+                    if self.typedefs.contains_key(name) {
+                        return self.var_decl();
+                    }
+                }
                 // Check for label: "ident :"
                 if let TokenKind::Ident(name) = &self.current().kind {
                     if self.pos + 1 < self.tokens.len()

@@ -388,6 +388,13 @@ assert 12 'int main() { enum { X = 10, Y, Z }; return Z; }'
 assert 5 'int main() { enum { A = 5 }; return A; }'
 assert 4 'int main() { return sizeof(enum { A, B }); }'
 
+# Step 8.2: typedef
+assert 42 'int main() { typedef int MyInt; MyInt a = 42; return a; }'
+assert 3 'int main() { typedef int *IntPtr; int a = 3; IntPtr p = &a; return *p; }'
+assert 4 'int main() { typedef int MyInt; return sizeof(MyInt); }'
+assert 5 'typedef int MyInt; MyInt add(MyInt a, MyInt b) { return a + b; } int main() { return add(2, 3); }'
+assert 3 'int main() { typedef struct { int x; int y; } Point; Point p; p.x = 1; p.y = 2; return p.x + p.y; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

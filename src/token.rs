@@ -27,6 +27,7 @@ pub enum TokenKind {
     Struct,
     Union,
     Enum,
+    Typedef,
     // Operators
     Plus,
     PlusPlus,
