@@ -26,6 +26,7 @@ pub enum TokenKind {
     Bool,
     Struct,
     Union,
+    Enum,
     // Operators
     Plus,
     PlusPlus,

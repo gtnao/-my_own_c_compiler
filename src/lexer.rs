@@ -51,6 +51,7 @@ impl<'a> Lexer<'a> {
                     "sizeof" => TokenKind::Sizeof,
                     "struct" => TokenKind::Struct,
                     "union" => TokenKind::Union,
+                    "enum" => TokenKind::Enum,
                     "unsigned" => TokenKind::Unsigned,
                     "void" => TokenKind::Void,
                     "_Bool" => TokenKind::Bool,

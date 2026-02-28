@@ -14,6 +14,7 @@ pub struct Parser<'a> {
     unique_counter: usize,
     globals: Vec<(Type, String)>,
     struct_tags: HashMap<String, Type>,
+    enum_values: HashMap<String, i64>,
 }
 
 impl<'a> Parser<'a> {
@@ -27,6 +28,7 @@ impl<'a> Parser<'a> {
             unique_counter: 0,
             globals: Vec::new(),
             struct_tags: HashMap::new(),
+            enum_values: HashMap::new(),
         }
     }
 
@@ -49,7 +51,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum)
     }
 
     fn is_function(&self) -> bool {
@@ -62,7 +64,7 @@ impl<'a> Parser<'a> {
         // Skip type keywords
         while Self::is_type_keyword(&self.tokens[i].kind) {
             // For "struct"/"union", skip optional tag name and body
-            if self.tokens[i].kind == TokenKind::Struct || self.tokens[i].kind == TokenKind::Union {
+            if self.tokens[i].kind == TokenKind::Struct || self.tokens[i].kind == TokenKind::Union || self.tokens[i].kind == TokenKind::Enum {
                 i += 1;
                 // Skip tag name if present
                 if let TokenKind::Ident(_) = &self.tokens[i].kind {
@@ -257,6 +259,46 @@ impl<'a> Parser<'a> {
             TokenKind::Union => {
                 self.advance();
                 self.parse_struct_or_union(true)
+            }
+            TokenKind::Enum => {
+                self.advance();
+                // Skip optional tag name
+                if let TokenKind::Ident(_) = &self.current().kind {
+                    self.advance();
+                }
+                // Parse enum body if present
+                if self.current().kind == TokenKind::LBrace {
+                    self.advance();
+                    let mut val: i64 = 0;
+                    while self.current().kind != TokenKind::RBrace {
+                        let name = match &self.current().kind {
+                            TokenKind::Ident(s) => s.clone(),
+                            _ => {
+                                self.reporter.error_at(
+                                    self.current().pos,
+                                    "expected enum constant name",
+                                );
+                            }
+                        };
+                        self.advance();
+                        // Optional explicit value: = num
+                        if self.current().kind == TokenKind::Eq {
+                            self.advance();
+                            if let TokenKind::Num(n) = self.current().kind {
+                                val = n;
+                                self.advance();
+                            }
+                        }
+                        self.enum_values.insert(name, val);
+                        val += 1;
+                        if self.current().kind == TokenKind::Comma {
+                            self.advance();
+                        }
+                    }
+                    self.expect(TokenKind::RBrace);
+                }
+                // enum type is int
+                Type::int_type()
             }
             _ => {
                 if is_unsigned {
@@ -549,7 +591,7 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum => {
                 self.var_decl()
             }
             _ => {
@@ -1145,6 +1187,10 @@ impl<'a> Parser<'a> {
                     }
                     self.expect(TokenKind::RParen);
                     return Expr::FuncCall { name, args };
+                }
+                // Check for enum constant
+                if let Some(&val) = self.enum_values.get(&name) {
+                    return Expr::Num(val);
                 }
                 let resolved = self.resolve_var(&name);
                 Expr::Var(resolved)

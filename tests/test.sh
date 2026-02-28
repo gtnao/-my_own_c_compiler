@@ -378,6 +378,16 @@ assert 12 'int main() { return sizeof(struct { struct { int x; int y; } inner; i
 assert 42 'int main() { struct { union { int a; int b; } u; int c; } s; s.u.a = 42; return s.u.b; }'
 assert 5 'int main() { struct O { struct I { int x; } inner; }; struct O o; o.inner.x = 5; return o.inner.x; }'
 
+# Step 8.1: enum
+assert 0 'int main() { enum { A, B, C }; return A; }'
+assert 1 'int main() { enum { A, B, C }; return B; }'
+assert 2 'int main() { enum { A, B, C }; return C; }'
+assert 10 'int main() { enum { X = 10, Y, Z }; return X; }'
+assert 11 'int main() { enum { X = 10, Y, Z }; return Y; }'
+assert 12 'int main() { enum { X = 10, Y, Z }; return Z; }'
+assert 5 'int main() { enum { A = 5 }; return A; }'
+assert 4 'int main() { return sizeof(enum { A, B }); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
