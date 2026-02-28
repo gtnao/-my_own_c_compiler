@@ -741,56 +741,128 @@ impl<'a> Parser<'a> {
             self.advance();
             if self.current().kind == TokenKind::LBrace {
                 // Brace initializer: = { expr, expr, ... }
+                // Supports designated initializers: .member = val, [idx] = val
                 self.advance();
-                let mut init_exprs = Vec::new();
-                while self.current().kind != TokenKind::RBrace {
-                    init_exprs.push(self.assign());
-                    if self.current().kind == TokenKind::Comma {
-                        self.advance();
-                    }
-                }
-                self.expect(TokenKind::RBrace);
-                self.expect(TokenKind::Semicolon);
-
-                // Determine array type (fill in size for empty brackets)
-                let ty = if has_empty_bracket {
-                    let base = ty.base_type().unwrap().clone();
-                    Type::array_of(base, init_exprs.len())
-                } else {
-                    ty
-                };
-
-                let unique = self.declare_var(&name, ty.clone());
-                let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty: ty.clone(), init: None }];
 
                 if let crate::types::TypeKind::Struct(ref members) = ty.kind {
-                    // Struct initializer: assign to each member
-                    for (i, init_expr) in init_exprs.into_iter().enumerate() {
-                        if i < members.len() {
-                            let mem_name = members[i].name.clone();
+                    // Struct initializer with optional designators
+                    let members_list = members.clone();
+                    let unique = self.declare_var(&name, ty.clone());
+                    let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty: ty.clone(), init: None }];
+                    let mut seq_idx = 0;
+
+                    while self.current().kind != TokenKind::RBrace {
+                        if self.current().kind == TokenKind::Dot {
+                            // Designated: .member = val
+                            self.advance();
+                            let mem_name = match &self.current().kind {
+                                TokenKind::Ident(s) => s.clone(),
+                                _ => {
+                                    self.reporter.error_at(
+                                        self.current().pos,
+                                        "expected member name after '.'",
+                                    );
+                                }
+                            };
+                            self.advance();
+                            self.expect(TokenKind::Eq);
+                            let val = self.assign();
                             stmts.push(Stmt::ExprStmt(Expr::Assign {
                                 lhs: Box::new(Expr::Member(
                                     Box::new(Expr::Var(unique.clone())),
-                                    mem_name,
+                                    mem_name.clone(),
                                 )),
-                                rhs: Box::new(init_expr),
+                                rhs: Box::new(val),
                             }));
+                            // Update seq_idx to position after this member
+                            if let Some(pos) = members_list.iter().position(|m| m.name == mem_name) {
+                                seq_idx = pos + 1;
+                            }
+                        } else {
+                            // Sequential
+                            let val = self.assign();
+                            if seq_idx < members_list.len() {
+                                let mem_name = members_list[seq_idx].name.clone();
+                                stmts.push(Stmt::ExprStmt(Expr::Assign {
+                                    lhs: Box::new(Expr::Member(
+                                        Box::new(Expr::Var(unique.clone())),
+                                        mem_name,
+                                    )),
+                                    rhs: Box::new(val),
+                                }));
+                            }
+                            seq_idx += 1;
+                        }
+                        if self.current().kind == TokenKind::Comma {
+                            self.advance();
                         }
                     }
+                    self.expect(TokenKind::RBrace);
+                    self.expect(TokenKind::Semicolon);
+                    return Stmt::Block(stmts);
                 } else {
-                    // Array initializer: assign to each element
-                    for (i, init_expr) in init_exprs.into_iter().enumerate() {
+                    // Array initializer with optional designators
+                    let mut indexed_exprs: Vec<(usize, Expr)> = Vec::new();
+                    let mut seq_idx: usize = 0;
+                    let mut max_idx: usize = 0;
+
+                    while self.current().kind != TokenKind::RBrace {
+                        if self.current().kind == TokenKind::LBracket {
+                            // Designated: [idx] = val
+                            self.advance();
+                            let idx = match &self.current().kind {
+                                TokenKind::Num(n) => *n as usize,
+                                _ => {
+                                    self.reporter.error_at(
+                                        self.current().pos,
+                                        "expected array index",
+                                    );
+                                }
+                            };
+                            self.advance();
+                            self.expect(TokenKind::RBracket);
+                            self.expect(TokenKind::Eq);
+                            let val = self.assign();
+                            indexed_exprs.push((idx, val));
+                            if idx + 1 > max_idx { max_idx = idx + 1; }
+                            seq_idx = idx + 1;
+                        } else {
+                            // Sequential
+                            let val = self.assign();
+                            indexed_exprs.push((seq_idx, val));
+                            seq_idx += 1;
+                            if seq_idx > max_idx { max_idx = seq_idx; }
+                        }
+                        if self.current().kind == TokenKind::Comma {
+                            self.advance();
+                        }
+                    }
+                    self.expect(TokenKind::RBrace);
+                    self.expect(TokenKind::Semicolon);
+
+                    // Determine array type (fill in size for empty brackets)
+                    let ty = if has_empty_bracket {
+                        let base = ty.base_type().unwrap().clone();
+                        Type::array_of(base, max_idx)
+                    } else {
+                        ty
+                    };
+
+                    let unique = self.declare_var(&name, ty.clone());
+                    let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty: ty.clone(), init: None }];
+
+                    for (idx, init_expr) in indexed_exprs {
                         stmts.push(Stmt::ExprStmt(Expr::Assign {
                             lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
                                 op: BinOp::Add,
                                 lhs: Box::new(Expr::Var(unique.clone())),
-                                rhs: Box::new(Expr::Num(i as i64)),
+                                rhs: Box::new(Expr::Num(idx as i64)),
                             }))),
                             rhs: Box::new(init_expr),
                         }));
                     }
+                    return Stmt::Block(stmts);
                 }
-                return Stmt::Block(stmts);
             } else if matches!(self.current().kind, TokenKind::Str(_)) && (has_empty_bracket || matches!(ty.kind, crate::types::TypeKind::Array(_, _))) {
                 // String initializer for char array: char s[] = "hello";
                 let s = match &self.current().kind {

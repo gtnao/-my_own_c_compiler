@@ -444,6 +444,17 @@ assert_output '3 + 4 = 7' 'int printf(); int main() { printf("%d + %d = %d", 3, 
 assert 6 'int sum(int a[], int n) { int s = 0; int i; for (i = 0; i < n; i++) s += a[i]; return s; } int main() { int a[3] = {1, 2, 3}; return sum(a, 3); }'
 assert 3 'int first(int a[]) { return a[0]; } int main() { int a[3] = {3, 2, 1}; return first(a); }'
 
+# Step 9.3: designated initializers
+# Array designated initializer
+assert 10 'int main() { int a[5] = {[2] = 10}; return a[2]; }'
+assert 0 'int main() { int a[5] = {[2] = 10}; return a[0]; }'
+assert 20 'int main() { int a[5] = {1, 2, [3] = 20, 4}; return a[3]; }'
+assert 4 'int main() { int a[5] = {1, 2, [3] = 20, 4}; return a[4]; }'
+# Struct designated initializer
+assert 30 'int main() { struct { int a; int b; int c; } s = {.b = 20, .c = 30}; return s.c; }'
+assert 20 'int main() { struct { int a; int b; int c; } s = {.b = 20, .c = 30}; return s.b; }'
+assert 5 'int main() { struct { int x; int y; } p = {.x = 5, .y = 10}; return p.x; }'
+
 # Step 12.3: string initialization for char arrays
 assert 104 'int main() { char s[] = "hello"; return s[0]; }'
 assert 111 'int main() { char s[] = "hello"; return s[4]; }'
