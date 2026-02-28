@@ -14,16 +14,13 @@ impl<'a> Parser<'a> {
         Self { tokens, pos: 0, reporter, locals: Vec::new() }
     }
 
-    // program = function
-    pub fn parse(&mut self) -> Function {
-        let func = self.function();
-        if self.current().kind != TokenKind::Eof {
-            self.reporter.error_at(
-                self.current().pos,
-                &format!("unexpected token: {:?}", self.current().kind),
-            );
+    // program = function*
+    pub fn parse(&mut self) -> Vec<Function> {
+        let mut functions = Vec::new();
+        while self.current().kind != TokenKind::Eof {
+            functions.push(self.function());
         }
-        func
+        functions
     }
 
     // function = "int" ident "(" ")" "{" stmt* "}"
@@ -50,7 +47,8 @@ impl<'a> Parser<'a> {
         }
         self.expect(TokenKind::RBrace);
 
-        Function { name, body }
+        let locals = self.locals.clone();
+        Function { name, body, locals }
     }
 
     // stmt = "return" expr ";"
@@ -699,6 +697,20 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(name) => {
                 self.advance();
+                // Function call: ident "(" args ")"
+                if self.current().kind == TokenKind::LParen {
+                    self.advance();
+                    let mut args = Vec::new();
+                    if self.current().kind != TokenKind::RParen {
+                        args.push(self.assign());
+                        while self.current().kind == TokenKind::Comma {
+                            self.advance();
+                            args.push(self.assign());
+                        }
+                    }
+                    self.expect(TokenKind::RParen);
+                    return Expr::FuncCall { name, args };
+                }
                 Expr::Var(name)
             }
             TokenKind::LParen => {
@@ -714,10 +726,6 @@ impl<'a> Parser<'a> {
                 );
             }
         }
-    }
-
-    pub fn get_locals(&self) -> &[String] {
-        &self.locals
     }
 
     fn current(&self) -> &Token {
@@ -744,7 +752,7 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
 
-    fn parse_func(input: &str) -> Function {
+    fn parse_program(input: &str) -> Vec<Function> {
         let reporter = crate::error::ErrorReporter::new("test", input);
         let mut lexer = Lexer::new(input, &reporter);
         let tokens = lexer.tokenize();
@@ -754,26 +762,27 @@ mod tests {
 
     #[test]
     fn test_return_number() {
-        let func = parse_func("int main() { return 42; }");
-        assert_eq!(func.name, "main");
-        assert_eq!(func.body.len(), 1);
-        assert_eq!(func.body[0], Stmt::Return(Expr::Num(42)));
+        let funcs = parse_program("int main() { return 42; }");
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name, "main");
+        assert_eq!(funcs[0].body.len(), 1);
+        assert_eq!(funcs[0].body[0], Stmt::Return(Expr::Num(42)));
     }
 
     #[test]
     fn test_expr_stmt() {
-        let func = parse_func("int main() { 1; 2; return 3; }");
-        assert_eq!(func.body.len(), 3);
-        assert_eq!(func.body[0], Stmt::ExprStmt(Expr::Num(1)));
-        assert_eq!(func.body[1], Stmt::ExprStmt(Expr::Num(2)));
-        assert_eq!(func.body[2], Stmt::Return(Expr::Num(3)));
+        let funcs = parse_program("int main() { 1; 2; return 3; }");
+        assert_eq!(funcs[0].body.len(), 3);
+        assert_eq!(funcs[0].body[0], Stmt::ExprStmt(Expr::Num(1)));
+        assert_eq!(funcs[0].body[1], Stmt::ExprStmt(Expr::Num(2)));
+        assert_eq!(funcs[0].body[2], Stmt::Return(Expr::Num(3)));
     }
 
     #[test]
     fn test_return_add() {
-        let func = parse_func("int main() { return 1 + 2; }");
-        assert_eq!(func.body.len(), 1);
-        match &func.body[0] {
+        let funcs = parse_program("int main() { return 1 + 2; }");
+        assert_eq!(funcs[0].body.len(), 1);
+        match &funcs[0].body[0] {
             Stmt::Return(Expr::BinOp { op: BinOp::Add, .. }) => {}
             _ => panic!("expected return with add"),
         }
@@ -781,18 +790,33 @@ mod tests {
 
     #[test]
     fn test_var_decl() {
-        let func = parse_func("int main() { int a; a = 3; return a; }");
-        assert_eq!(func.body.len(), 3);
-        assert_eq!(func.body[0], Stmt::VarDecl { name: "a".to_string(), init: None });
+        let funcs = parse_program("int main() { int a; a = 3; return a; }");
+        assert_eq!(funcs[0].body.len(), 3);
+        assert_eq!(funcs[0].body[0], Stmt::VarDecl { name: "a".to_string(), init: None });
     }
 
     #[test]
     fn test_var_with_init() {
-        let func = parse_func("int main() { int a = 5; return a; }");
-        assert_eq!(func.body.len(), 2);
+        let funcs = parse_program("int main() { int a = 5; return a; }");
+        assert_eq!(funcs[0].body.len(), 2);
         assert_eq!(
-            func.body[0],
+            funcs[0].body[0],
             Stmt::VarDecl { name: "a".to_string(), init: Some(Expr::Num(5)) }
         );
+    }
+
+    #[test]
+    fn test_multiple_functions() {
+        let funcs = parse_program("int ret3() { return 3; } int main() { return ret3(); }");
+        assert_eq!(funcs.len(), 2);
+        assert_eq!(funcs[0].name, "ret3");
+        assert_eq!(funcs[1].name, "main");
+        match &funcs[1].body[0] {
+            Stmt::Return(Expr::FuncCall { name, args }) => {
+                assert_eq!(name, "ret3");
+                assert_eq!(args.len(), 0);
+            }
+            _ => panic!("expected return with func call"),
+        }
     }
 }

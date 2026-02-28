@@ -34,11 +34,10 @@ fn main() {
     let tokens = lexer.tokenize();
 
     let mut parser = Parser::new(tokens, &reporter);
-    let func = parser.parse();
-    let locals: Vec<String> = parser.get_locals().to_vec();
+    let functions = parser.parse();
 
     let mut codegen = Codegen::new();
-    let output = codegen.generate(&func, &locals);
+    let output = codegen.generate(&functions);
 
     print!("{}", output);
 }

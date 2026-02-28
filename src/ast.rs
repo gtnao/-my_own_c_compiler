@@ -54,6 +54,10 @@ pub enum Expr {
     PreDec(Box<Expr>),
     PostInc(Box<Expr>),
     PostDec(Box<Expr>),
+    FuncCall {
+        name: String,
+        args: Vec<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,4 +106,5 @@ pub enum Stmt {
 pub struct Function {
     pub name: String,
     pub body: Vec<Stmt>,
+    pub locals: Vec<String>,
 }

@@ -9,6 +9,8 @@ pub struct Codegen {
     break_labels: Vec<String>,
     continue_labels: Vec<String>,
     goto_labels: HashMap<String, String>,
+    current_func_name: String,
+    stack_depth: usize,
 }
 
 impl Codegen {
@@ -21,6 +23,8 @@ impl Codegen {
             break_labels: Vec::new(),
             continue_labels: Vec::new(),
             goto_labels: HashMap::new(),
+            current_func_name: String::new(),
+            stack_depth: 0,
         }
     }
 
@@ -30,14 +34,24 @@ impl Codegen {
         label
     }
 
-    pub fn generate(&mut self, func: &Function, local_vars: &[String]) -> String {
+    pub fn generate(&mut self, functions: &[Function]) -> String {
+        for func in functions {
+            self.gen_function(func);
+        }
+        self.output.clone()
+    }
+
+    fn gen_function(&mut self, func: &Function) {
+        self.current_func_name = func.name.clone();
+        self.stack_depth = 0;
+
         // Set up local variable offsets on stack
         self.locals.clear();
         self.goto_labels.clear();
-        for (i, name) in local_vars.iter().enumerate() {
+        for (i, name) in func.locals.iter().enumerate() {
             self.locals.insert(name.clone(), (i + 1) * 8);
         }
-        self.stack_size = local_vars.len() * 8;
+        self.stack_size = func.locals.len() * 8;
         // Align stack to 16 bytes
         if self.stack_size % 16 != 0 {
             self.stack_size = (self.stack_size + 15) & !15;
@@ -61,15 +75,14 @@ impl Codegen {
         self.emit("  mov %rbp, %rsp");
         self.emit("  pop %rbp");
         self.emit("  ret");
-
-        self.output.clone()
     }
 
     fn gen_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Return(expr) => {
                 self.gen_expr(expr);
-                self.emit("  jmp .Lreturn.main");
+                let func_name = self.current_func_name.clone();
+                self.emit(&format!("  jmp .Lreturn.{}", func_name));
             }
             Stmt::ExprStmt(expr) => {
                 self.gen_expr(expr);
@@ -352,12 +365,23 @@ impl Codegen {
                     // %rax still holds old value
                 }
             }
+            Expr::FuncCall { name, args: _ } => {
+                // Align stack to 16 bytes before call
+                let needs_align = self.stack_depth % 2 != 0;
+                if needs_align {
+                    self.emit("  sub $8, %rsp");
+                }
+                self.emit(&format!("  call {}", name));
+                if needs_align {
+                    self.emit("  add $8, %rsp");
+                }
+            }
             Expr::BinOp { op, lhs, rhs } => {
                 // Evaluate rhs first, push it, then evaluate lhs
                 self.gen_expr(rhs);
-                self.emit("  push %rax");
+                self.push();
                 self.gen_expr(lhs);
-                self.emit("  pop %rdi");
+                self.pop("%rdi");
 
                 match op {
                     BinOp::Add => {
@@ -440,6 +464,16 @@ impl Codegen {
         }
     }
 
+    fn push(&mut self) {
+        self.emit("  push %rax");
+        self.stack_depth += 1;
+    }
+
+    fn pop(&mut self, reg: &str) {
+        self.emit(&format!("  pop {}", reg));
+        self.stack_depth -= 1;
+    }
+
     fn emit(&mut self, s: &str) {
         self.output.push_str(s);
         self.output.push('\n');
@@ -453,11 +487,12 @@ mod tests {
     #[test]
     fn test_return_number() {
         let mut codegen = Codegen::new();
-        let func = Function {
+        let funcs = vec![Function {
             name: "main".to_string(),
             body: vec![Stmt::Return(Expr::Num(42))],
-        };
-        let output = codegen.generate(&func, &[]);
+            locals: vec![],
+        }];
+        let output = codegen.generate(&funcs);
         assert!(output.contains("mov $42, %rax"));
         assert!(output.contains("jmp .Lreturn.main"));
     }
@@ -465,7 +500,7 @@ mod tests {
     #[test]
     fn test_var_decl_and_return() {
         let mut codegen = Codegen::new();
-        let func = Function {
+        let funcs = vec![Function {
             name: "main".to_string(),
             body: vec![
                 Stmt::VarDecl {
@@ -474,8 +509,9 @@ mod tests {
                 },
                 Stmt::Return(Expr::Var("a".to_string())),
             ],
-        };
-        let output = codegen.generate(&func, &["a".to_string()]);
+            locals: vec!["a".to_string()],
+        }];
+        let output = codegen.generate(&funcs);
         assert!(output.contains("sub $16, %rsp"));
         assert!(output.contains("mov %rax, -8(%rbp)"));
         assert!(output.contains("mov -8(%rbp), %rax"));
