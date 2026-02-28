@@ -742,6 +742,11 @@ assert 42 'int main() { signed long l = 42; return l; }'
 assert 5 '_Noreturn void exit_fn() { return; } int main() { return 5; }'
 assert 3 '__noreturn__ void die() { return; } int main() { return 3; }'
 
+# Step 14.8: restrict qualifier
+assert 5 'int main() { int a = 5; int * restrict p = &a; return *p; }'
+assert 7 'int main() { int a = 7; int * __restrict p = &a; return *p; }'
+assert 9 'int main() { int a = 9; int * __restrict__ p = &a; return *p; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'

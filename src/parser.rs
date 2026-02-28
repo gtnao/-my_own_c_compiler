@@ -108,7 +108,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -497,7 +497,7 @@ impl<'a> Parser<'a> {
         }
         self.skip_attribute();
         // Skip type qualifiers (const, volatile) and _Alignas
-        while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
+        while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas) {
             if self.current().kind == TokenKind::Alignas {
                 self.advance(); // _Alignas
                 self.expect(TokenKind::LParen);
@@ -655,7 +655,7 @@ impl<'a> Parser<'a> {
         while self.current().kind == TokenKind::Star {
             self.advance();
             // Skip qualifiers after * (e.g., int *const p)
-            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
+            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas) {
                 self.advance();
             }
             ty = Type::ptr_to(ty);
@@ -1019,7 +1019,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn => {
                 self.var_decl()
             }
             _ => {
@@ -1382,7 +1382,7 @@ impl<'a> Parser<'a> {
                         let mut decl_ty = ty.clone();
                         while self.current().kind == TokenKind::Star {
                             self.advance();
-                            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
+                            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas) {
                                 self.advance();
                             }
                             decl_ty = Type::ptr_to(decl_ty);
@@ -1425,7 +1425,7 @@ impl<'a> Parser<'a> {
                 let mut decl_ty = ty.clone();
                 while self.current().kind == TokenKind::Star {
                     self.advance();
-                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas) {
                         self.advance();
                     }
                     decl_ty = Type::ptr_to(decl_ty);
