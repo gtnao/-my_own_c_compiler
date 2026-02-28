@@ -479,6 +479,10 @@ int main() { return X + Y; }'
 assert 5 '#define VAL 5
 int main() { int a = VAL; return a; }'
 
+# Step 11.2: variadic arguments
+assert 60 'int sum(int n, ...) { va_list ap; va_start(ap, n); int total = 0; int i; for (i = 0; i < n; i++) total += va_arg(ap, int); va_end(ap); return total; } int main() { return sum(3, 10, 20, 30); }'
+assert 6 'int sum(int n, ...) { va_list ap; va_start(ap, n); int total = 0; int i; for (i = 0; i < n; i++) total += va_arg(ap, int); va_end(ap); return total; } int main() { return sum(3, 1, 2, 3); }'
+
 # Step 10.8: #error, #warning, #line, #pragma
 assert 42 '#pragma once
 int main() { return 42; }'

@@ -112,7 +112,7 @@ impl<'a> Parser<'a> {
             return true;
         }
         if let TokenKind::Ident(name) = kind {
-            return self.typedefs.contains_key(name);
+            return self.typedefs.contains_key(name) || name == "va_list";
         }
         false
     }
@@ -467,7 +467,11 @@ impl<'a> Parser<'a> {
                     // bare "unsigned" = "unsigned int"
                     Type::uint()
                 } else if let TokenKind::Ident(name) = &self.current().kind {
-                    if let Some(ty) = self.typedefs.get(name).cloned() {
+                    if name == "va_list" {
+                        // va_list is treated as char* (pointer to register save area)
+                        self.advance();
+                        Type::ptr_to(Type::char_type())
+                    } else if let Some(ty) = self.typedefs.get(name).cloned() {
                         self.advance();
                         ty
                     } else {
@@ -516,9 +520,16 @@ impl<'a> Parser<'a> {
         self.enter_scope();
         let mut params = Vec::new();
 
-        // Parse parameter list: (type ident ("," type ident)*)?
+        // Parse parameter list: (type ident ("," type ident)* ("," "...")?)?
+        let mut is_variadic = false;
         if self.current().kind != TokenKind::RParen {
             loop {
+                // Check for ... (variadic)
+                if self.current().kind == TokenKind::Ellipsis {
+                    is_variadic = true;
+                    self.advance();
+                    break;
+                }
                 let mut param_ty = self.parse_type();
                 let param_name = match &self.current().kind {
                     TokenKind::Ident(s) => s.clone(),
@@ -568,7 +579,7 @@ impl<'a> Parser<'a> {
         self.leave_scope();
 
         let locals = self.locals.clone();
-        Some(Function { name, return_ty, params, body, locals })
+        Some(Function { name, return_ty, params, is_variadic, body, locals })
     }
 
     // stmt = "return" expr ";"
@@ -788,9 +799,9 @@ impl<'a> Parser<'a> {
                 self.var_decl()
             }
             _ => {
-                // Check for typedef name as type
+                // Check for typedef name or va_list as type
                 if let TokenKind::Ident(name) = &self.current().kind {
-                    if self.typedefs.contains_key(name) {
+                    if self.typedefs.contains_key(name) || name == "va_list" {
                         return self.var_decl();
                     }
                 }
@@ -1645,6 +1656,51 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(name) => {
                 self.advance();
+
+                // va_start(ap, last_param)
+                if name == "va_start" {
+                    self.expect(TokenKind::LParen);
+                    let ap = self.assign();
+                    self.expect(TokenKind::Comma);
+                    let last_param = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected parameter name in va_start",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RParen);
+                    let resolved = self.resolve_var(&last_param);
+                    return Expr::VaStart {
+                        ap: Box::new(ap),
+                        last_param: resolved,
+                    };
+                }
+
+                // va_arg(ap, type)
+                if name == "va_arg" {
+                    self.expect(TokenKind::LParen);
+                    let ap = self.assign();
+                    self.expect(TokenKind::Comma);
+                    let ty = self.parse_type();
+                    self.expect(TokenKind::RParen);
+                    return Expr::VaArg {
+                        ap: Box::new(ap),
+                        ty,
+                    };
+                }
+
+                // va_end(ap) — no-op, evaluates to 0
+                if name == "va_end" {
+                    self.expect(TokenKind::LParen);
+                    let _ap = self.assign();
+                    self.expect(TokenKind::RParen);
+                    return Expr::Num(0);
+                }
+
                 // Function call: ident "(" args ")"
                 if self.current().kind == TokenKind::LParen {
                     self.advance();

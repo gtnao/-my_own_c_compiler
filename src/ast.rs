@@ -70,6 +70,14 @@ pub enum Expr {
     Deref(Box<Expr>),
     StrLit(Vec<u8>),
     Member(Box<Expr>, String),
+    VaStart {
+        ap: Box<Expr>,
+        last_param: String,
+    },
+    VaArg {
+        ap: Box<Expr>,
+        ty: Type,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -120,6 +128,7 @@ pub struct Function {
     pub name: String,
     pub return_ty: Type,
     pub params: Vec<(Type, String)>,
+    pub is_variadic: bool,
     pub body: Vec<Stmt>,
     pub locals: Vec<(Type, String)>,
 }

@@ -16,6 +16,8 @@ pub struct Codegen {
     globals: HashSet<String>,
     global_types: HashMap<String, Type>,
     string_literals: Vec<Vec<u8>>,
+    va_save_area_offset: usize,
+    current_func_param_count: usize,
 }
 
 impl Codegen {
@@ -34,6 +36,8 @@ impl Codegen {
             globals: HashSet::new(),
             global_types: HashMap::new(),
             string_literals: Vec::new(),
+            va_save_area_offset: 0,
+            current_func_param_count: 0,
         }
     }
 
@@ -101,6 +105,7 @@ impl Codegen {
     fn gen_function(&mut self, func: &Function) {
         self.current_func_name = func.name.clone();
         self.stack_depth = 0;
+        self.current_func_param_count = func.params.len();
 
         // Set up local variable offsets on stack using type sizes
         self.locals.clear();
@@ -116,6 +121,15 @@ impl Codegen {
             self.locals.insert(name.clone(), offset);
             self.local_types.insert(name.clone(), ty.clone());
         }
+
+        // For variadic functions, allocate register save area (6 * 8 = 48 bytes)
+        self.va_save_area_offset = 0;
+        if func.is_variadic {
+            offset = (offset + 7) & !7; // 8-byte align
+            offset += 48; // 6 registers * 8 bytes
+            self.va_save_area_offset = offset;
+        }
+
         self.stack_size = offset;
         // Align stack to 16 bytes
         if self.stack_size % 16 != 0 {
@@ -162,6 +176,15 @@ impl Codegen {
             let src_offset = 16 + (i - 6) * 8;
             self.emit(&format!("  mov {}(%rbp), %rax", src_offset));
             self.emit_store_var(param);
+        }
+
+        // For variadic functions, save all 6 register args to contiguous save area
+        if func.is_variadic {
+            let base = self.va_save_area_offset;
+            for (i, reg) in arg_regs_64.iter().enumerate() {
+                // Save area: slot 0 at -(base), slot 1 at -(base-8), etc.
+                self.emit(&format!("  mov {}, -{}(%rbp)", reg, base - i * 8));
+            }
         }
 
         for stmt in &func.body {
@@ -544,6 +567,61 @@ impl Codegen {
                     TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) | TypeKind::Struct(_) => {} // no-op
                 }
             }
+            Expr::VaStart { ap, last_param: _ } => {
+                // Compute address of first unnamed arg in register save area.
+                // Register save area layout (highest offset = reg 0):
+                //   -(va_save_area_offset)(%rbp) = reg 0 (rdi)
+                //   -(va_save_area_offset - 8)(%rbp) = reg 1 (rsi)
+                //   ...
+                // Find the index of last_param among function params
+                let param_idx = self.current_func_param_count;
+                // First unnamed arg is at index param_idx in the save area
+                let base = self.va_save_area_offset;
+                let first_unnamed_offset = base - param_idx * 8;
+                self.emit(&format!("  lea -{}(%rbp), %rax", first_unnamed_offset));
+                // Store the address into ap variable
+                self.push(); // save computed address
+                self.gen_addr(ap); // get address of ap
+                self.emit("  mov %rax, %rdi"); // %rdi = address of ap
+                self.pop("%rax"); // %rax = computed address
+                self.emit("  mov %rax, (%rdi)"); // *ap = address
+            }
+            Expr::VaArg { ap, ty } => {
+                // 1. Get address of ap variable
+                self.gen_addr(ap);
+                self.emit("  mov %rax, %rcx"); // %rcx = &ap
+                // 2. Load current ap value (pointer)
+                self.emit("  mov (%rcx), %rdi"); // %rdi = ap (current pointer)
+                // 3. Load value from current pointer based on requested type
+                match ty.kind {
+                    TypeKind::Bool | TypeKind::Char if ty.is_unsigned => {
+                        self.emit("  movzbl (%rdi), %eax");
+                    }
+                    TypeKind::Char => {
+                        self.emit("  movsbl (%rdi), %eax");
+                    }
+                    TypeKind::Short if ty.is_unsigned => {
+                        self.emit("  movzwl (%rdi), %eax");
+                    }
+                    TypeKind::Short => {
+                        self.emit("  movswl (%rdi), %eax");
+                    }
+                    TypeKind::Int if ty.is_unsigned => {
+                        self.emit("  movl (%rdi), %eax");
+                    }
+                    TypeKind::Int => {
+                        self.emit("  movslq (%rdi), %rax");
+                    }
+                    _ => {
+                        self.emit("  mov (%rdi), %rax");
+                    }
+                }
+                self.push(); // save loaded value
+                // 4. Advance ap by 8 bytes (ascending: next arg at higher address)
+                self.emit("  add $8, %rdi");
+                self.emit("  mov %rdi, (%rcx)"); // store updated ap
+                self.pop("%rax"); // restore loaded value
+            }
             Expr::BinOp { op, lhs, rhs } => {
                 self.gen_expr(rhs);
                 self.push();
@@ -742,6 +820,8 @@ impl Codegen {
                 }
             }
             Expr::Comma(_, rhs) => self.expr_type(rhs),
+            Expr::VaArg { ty, .. } => ty.clone(),
+            Expr::VaStart { .. } => Type::void(),
             _ => Type::long_type(),
         }
     }
@@ -918,6 +998,7 @@ mod tests {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
                 params: vec![],
+                is_variadic: false,
                 body: vec![Stmt::Return(Some(Expr::Num(42)))],
                 locals: vec![],
             }],
@@ -937,6 +1018,7 @@ mod tests {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
                 params: vec![],
+                is_variadic: false,
                 body: vec![
                     Stmt::VarDecl {
                         name: "a".to_string(),
@@ -964,6 +1046,7 @@ mod tests {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
                 params: vec![],
+                is_variadic: false,
                 body: vec![
                     Stmt::VarDecl {
                         name: "a".to_string(),
@@ -991,6 +1074,7 @@ mod tests {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
                 params: vec![],
+                is_variadic: false,
                 body: vec![
                     Stmt::VarDecl {
                         name: "a".to_string(),

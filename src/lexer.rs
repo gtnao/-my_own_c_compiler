@@ -119,6 +119,13 @@ impl<'a> Lexer<'a> {
 
             let pos = self.pos;
 
+            // Three-character tokens: ...
+            if ch == '.' && self.peek_next() == Some('.') && self.peek_at(2) == Some('.') {
+                self.pos += 3;
+                tokens.push(Token { kind: TokenKind::Ellipsis, pos });
+                continue;
+            }
+
             // Two-character tokens
             if ch == '=' && self.peek_next() == Some('=') {
                 self.pos += 2;
@@ -245,6 +252,14 @@ impl<'a> Lexer<'a> {
     fn peek_next(&self) -> Option<char> {
         if self.pos + 1 < self.input.len() {
             Some(self.input[self.pos + 1] as char)
+        } else {
+            None
+        }
+    }
+
+    fn peek_at(&self, offset: usize) -> Option<char> {
+        if self.pos + offset < self.input.len() {
+            Some(self.input[self.pos + offset] as char)
         } else {
             None
         }
