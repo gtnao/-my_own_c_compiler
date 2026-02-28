@@ -462,6 +462,10 @@ assert 8 'int g[3] = {1, 2, 3}; int main() { return g[0] + g[1] + g[2] + g[0] * 
 assert 104 'char s[] = "hello"; int main() { return s[0]; }'
 assert 0 'char s[] = "hello"; int main() { return s[5]; }'
 
+# Step 9.6: static local variables
+assert 3 'int count() { static int c = 0; c++; return c; } int main() { count(); count(); return count(); }'
+assert 10 'int add(int x) { static int sum = 0; sum += x; return sum; } int main() { add(1); add(2); add(3); return add(4); }'
+
 # Step 9.4: compound literals
 assert 3 'int main() { int *p = (int[]){1, 2, 3}; return p[2]; }'
 assert 1 'int main() { int *p = (int[]){1, 2, 3}; return p[0]; }'

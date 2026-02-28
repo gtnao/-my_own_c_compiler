@@ -28,6 +28,7 @@ pub enum TokenKind {
     Union,
     Enum,
     Typedef,
+    Static,
     // Operators
     Plus,
     PlusPlus,

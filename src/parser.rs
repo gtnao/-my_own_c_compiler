@@ -747,6 +747,10 @@ impl<'a> Parser<'a> {
                 self.typedefs.insert(name, ty);
                 Stmt::Block(vec![])
             }
+            TokenKind::Static => {
+                self.advance();
+                self.static_local_var()
+            }
             TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum => {
                 self.var_decl()
             }
@@ -1021,6 +1025,62 @@ impl<'a> Parser<'a> {
         let unique = self.declare_var(&name, ty.clone());
         self.expect(TokenKind::Semicolon);
         Stmt::VarDecl { name: unique, ty, init: None }
+    }
+
+    /// Parse static local variable declaration.
+    /// Static locals are stored as global variables with unique names.
+    fn static_local_var(&mut self) -> Stmt {
+        let ty = self.parse_type();
+        let name = match &self.current().kind {
+            TokenKind::Ident(s) => s.clone(),
+            _ => {
+                self.reporter.error_at(
+                    self.current().pos,
+                    "expected variable name",
+                );
+            }
+        };
+        self.advance();
+
+        // Generate unique global name: __static.func.name.counter
+        self.unique_counter += 1;
+        let global_name = format!("__static.{}.{}", name, self.unique_counter);
+
+        // Parse optional initializer
+        let init_bytes = if self.current().kind == TokenKind::Eq {
+            self.advance();
+            let val = match &self.current().kind {
+                TokenKind::Num(n) => *n,
+                _ => {
+                    self.reporter.error_at(
+                        self.current().pos,
+                        "expected constant in static initializer",
+                    );
+                }
+            };
+            self.advance();
+            let elem_size = ty.size();
+            let mut bytes = Vec::new();
+            for i in 0..elem_size {
+                bytes.push(((val >> (i * 8)) & 0xff) as u8);
+            }
+            Some(bytes)
+        } else {
+            None
+        };
+
+        self.expect(TokenKind::Semicolon);
+
+        // Register as global variable
+        self.globals.push((ty.clone(), global_name.clone(), init_bytes));
+
+        // Register the global name in the current scope so local code uses it
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, global_name);
+        }
+
+        // No local VarDecl needed — it's a global
+        Stmt::Block(vec![])
     }
 
     // expr = assign ("," assign)*
