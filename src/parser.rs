@@ -425,17 +425,62 @@ impl<'a> Parser<'a> {
             let mut offset = 0;
             let mut bit_offset: usize = 0; // current bit offset within the current storage unit
             while self.current().kind != TokenKind::RBrace {
-                let mem_ty = self.parse_type();
-                let mem_name = match &self.current().kind {
-                    TokenKind::Ident(s) => s.clone(),
-                    _ => {
-                        self.reporter.error_at(
-                            self.current().pos,
-                            "expected member name",
-                        );
+                let mut mem_ty = self.parse_type();
+
+                // Function pointer member: type (*name)(params...)
+                let mem_name = if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && self.tokens[self.pos + 1].kind == TokenKind::Star
+                {
+                    self.advance(); // (
+                    self.advance(); // *
+                    // Skip qualifiers
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                        self.advance();
+                    }
+                    let name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected function pointer member name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RParen);
+                    // Skip parameter list
+                    self.expect(TokenKind::LParen);
+                    while self.current().kind != TokenKind::RParen {
+                        if self.is_type_start(&self.current().kind.clone()) {
+                            let _pty = self.parse_type();
+                            if let TokenKind::Ident(_) = &self.current().kind {
+                                self.advance();
+                            }
+                        }
+                        if self.current().kind == TokenKind::Comma {
+                            self.advance();
+                        }
+                    }
+                    self.expect(TokenKind::RParen);
+                    // Store as pointer to void (function pointer simplified)
+                    mem_ty = Type::ptr_to(Type::void());
+                    name
+                } else {
+                    match &self.current().kind {
+                        TokenKind::Ident(s) => {
+                            let s = s.clone();
+                            self.advance();
+                            s
+                        }
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected member name",
+                            );
+                        }
                     }
                 };
-                self.advance();
 
                 // Check for array member: name "[" num? "]"
                 let mem_ty = if self.current().kind == TokenKind::LBracket {
@@ -2155,6 +2200,23 @@ impl<'a> Parser<'a> {
                     };
                     self.advance();
                     node = Expr::Member(Box::new(node), member_name);
+                    // Check for function pointer call through struct member: s.fp(args)
+                    if self.current().kind == TokenKind::LParen {
+                        self.advance();
+                        let mut args = Vec::new();
+                        if self.current().kind != TokenKind::RParen {
+                            args.push(self.assign());
+                            while self.current().kind == TokenKind::Comma {
+                                self.advance();
+                                args.push(self.assign());
+                            }
+                        }
+                        self.expect(TokenKind::RParen);
+                        node = Expr::FuncPtrCall {
+                            fptr: Box::new(node),
+                            args,
+                        };
+                    }
                 }
                 TokenKind::Arrow => {
                     // p->member is (*p).member
@@ -2170,6 +2232,23 @@ impl<'a> Parser<'a> {
                     };
                     self.advance();
                     node = Expr::Member(Box::new(Expr::Deref(Box::new(node))), member_name);
+                    // Check for function pointer call through pointer member: p->fp(args)
+                    if self.current().kind == TokenKind::LParen {
+                        self.advance();
+                        let mut args = Vec::new();
+                        if self.current().kind != TokenKind::RParen {
+                            args.push(self.assign());
+                            while self.current().kind == TokenKind::Comma {
+                                self.advance();
+                                args.push(self.assign());
+                            }
+                        }
+                        self.expect(TokenKind::RParen);
+                        node = Expr::FuncPtrCall {
+                            fptr: Box::new(node),
+                            args,
+                        };
+                    }
                 }
                 TokenKind::PlusPlus => {
                     self.advance();

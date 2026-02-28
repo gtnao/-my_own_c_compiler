@@ -833,6 +833,11 @@ assert 5 'struct Ctx; typedef struct Ctx *CtxPtr; struct Ctx { int type; CtxPtr 
 assert 5 'int main() { int a=10; int b=5; void *pa=&a; void *pb=&b; return *(int*)pa - *(int*)pb; }'
 assert 1 'int int_cmp(void *a, void *b) { return *(int*)a - *(int*)b; } int main() { int x=10; int y=5; if (int_cmp(&x, &y) > 0) return 1; return 0; }'
 
+# Step 14.24: function pointer call through struct member
+assert 42 'unsigned long myfn(void *a) { return 42; } typedef unsigned long (*fn_t)(void *); typedef struct { fn_t fn; } S; int main() { S s; s.fn = myfn; return (int)s.fn(0); }'
+assert 7 'int add(int a, int b) { return a+b; } typedef struct { int (*f)(int, int); } S; int main() { S s; s.f = add; return s.f(3, 4); }'
+assert 10 'int get(void) { return 10; } typedef struct { int (*f)(void); } S; int main() { S s; s.f = get; S *p = &s; return p->f(); }'
+
 # Step 14.22: built-in fixed-width integer types
 assert 1 'int main() { int8_t a = 1; return a; }'
 assert 2 'int main() { int16_t a = 2; return a; }'
