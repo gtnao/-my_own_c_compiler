@@ -532,6 +532,8 @@ impl<'a> Parser<'a> {
             // Register tag if present
             if let Some(ref tag) = tag_name {
                 self.struct_tags.insert(tag.clone(), ty.clone());
+                // Update typedefs that may reference a forward-declared (empty) version
+                self.update_typedefs_with_struct(&ty);
             }
             ty
         } else if let Some(ref tag) = tag_name {
@@ -553,6 +555,55 @@ impl<'a> Parser<'a> {
                 self.current().pos,
                 &format!("expected {} tag or body", kind_name),
             );
+        }
+    }
+
+    /// Update all typedef types that contain an empty struct with the full definition.
+    /// This handles the case where a typedef references a forward-declared struct
+    /// that is later fully defined.
+    fn update_typedefs_with_struct(&mut self, full_ty: &Type) {
+        let keys: Vec<String> = self.typedefs.keys().cloned().collect();
+        for key in keys {
+            let ty = self.typedefs.get(&key).unwrap().clone();
+            if let Some(updated) = Self::replace_empty_struct(&ty, full_ty) {
+                self.typedefs.insert(key, updated);
+            }
+        }
+    }
+
+    /// Recursively replace empty structs in a type tree with the full struct definition.
+    fn replace_empty_struct(ty: &Type, full_ty: &Type) -> Option<Type> {
+        match &ty.kind {
+            TypeKind::Struct(members) if members.is_empty() => {
+                // Replace empty struct with full definition
+                if let TypeKind::Struct(full_members) = &full_ty.kind {
+                    if !full_members.is_empty() {
+                        return Some(full_ty.clone());
+                    }
+                }
+                None
+            }
+            TypeKind::Ptr(base) => {
+                if let Some(updated) = Self::replace_empty_struct(base, full_ty) {
+                    Some(Type {
+                        kind: TypeKind::Ptr(Box::new(updated)),
+                        is_unsigned: ty.is_unsigned,
+                    })
+                } else {
+                    None
+                }
+            }
+            TypeKind::Array(base, size) => {
+                if let Some(updated) = Self::replace_empty_struct(base, full_ty) {
+                    Some(Type {
+                        kind: TypeKind::Array(Box::new(updated), *size),
+                        is_unsigned: ty.is_unsigned,
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 

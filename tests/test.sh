@@ -825,6 +825,10 @@ assert 5 'void noop(void) {} int main() { noop(); return 5; }'
 assert 3 'struct List; struct List { int val; }; int main() { struct List l; l.val = 3; return l.val; }'
 assert 7 'int add(int a, int b) { return a + b; } int main() { return add(3, 4); }'
 
+# Step 14.21: typedef with forward-declared struct resolution
+assert 10 'struct Foo; typedef struct Foo *FooPtr; struct Foo { int x; int y; }; int main() { struct Foo f; f.x = 3; f.y = 7; FooPtr p = &f; return p->x + p->y; }'
+assert 5 'struct Ctx; typedef struct Ctx *CtxPtr; struct Ctx { int type; CtxPtr parent; }; int main() { struct Ctx c; c.type = 5; c.parent = 0; CtxPtr p = &c; return p->type; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
