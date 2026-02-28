@@ -5,6 +5,7 @@ pub struct Codegen {
     output: String,
     locals: HashMap<String, usize>,
     stack_size: usize,
+    label_count: usize,
 }
 
 impl Codegen {
@@ -13,7 +14,14 @@ impl Codegen {
             output: String::new(),
             locals: HashMap::new(),
             stack_size: 0,
+            label_count: 0,
         }
+    }
+
+    fn new_label(&mut self) -> String {
+        let label = format!(".L{}", self.label_count);
+        self.label_count += 1;
+        label
     }
 
     pub fn generate(&mut self, func: &Function, local_vars: &[String]) -> String {
@@ -58,6 +66,21 @@ impl Codegen {
             }
             Stmt::ExprStmt(expr) => {
                 self.gen_expr(expr);
+            }
+            Stmt::If { cond, then_stmt, else_stmt } => {
+                let else_label = self.new_label();
+                let end_label = self.new_label();
+
+                self.gen_expr(cond);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  je {}", else_label));
+                self.gen_stmt(then_stmt);
+                self.emit(&format!("  jmp {}", end_label));
+                self.emit(&format!("{}:", else_label));
+                if let Some(else_s) = else_stmt {
+                    self.gen_stmt(else_s);
+                }
+                self.emit(&format!("{}:", end_label));
             }
             Stmt::VarDecl { name, init } => {
                 if let Some(expr) = init {

@@ -5,6 +5,8 @@ pub enum TokenKind {
     // Keywords
     Return,
     Int,
+    If,
+    Else,
     // Operators
     Plus,
     Minus,

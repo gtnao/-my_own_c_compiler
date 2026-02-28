@@ -34,6 +34,8 @@ impl<'a> Lexer<'a> {
                 let kind = match word.as_str() {
                     "return" => TokenKind::Return,
                     "int" => TokenKind::Int,
+                    "if" => TokenKind::If,
+                    "else" => TokenKind::Else,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

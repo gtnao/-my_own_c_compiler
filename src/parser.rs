@@ -54,6 +54,7 @@ impl<'a> Parser<'a> {
     }
 
     // stmt = "return" expr ";"
+    //      | "if" "(" expr ")" stmt ("else" stmt)?
     //      | "int" ident ("=" expr)? ";"
     //      | expr ";"
     fn stmt(&mut self) -> Stmt {
@@ -63,6 +64,24 @@ impl<'a> Parser<'a> {
                 let expr = self.expr();
                 self.expect(TokenKind::Semicolon);
                 Stmt::Return(expr)
+            }
+            TokenKind::If => {
+                self.advance();
+                self.expect(TokenKind::LParen);
+                let cond = self.expr();
+                self.expect(TokenKind::RParen);
+                let then_stmt = self.stmt();
+                let else_stmt = if self.current().kind == TokenKind::Else {
+                    self.advance();
+                    Some(Box::new(self.stmt()))
+                } else {
+                    None
+                };
+                Stmt::If {
+                    cond,
+                    then_stmt: Box::new(then_stmt),
+                    else_stmt,
+                }
             }
             TokenKind::Int => {
                 self.var_decl()

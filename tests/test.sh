@@ -76,6 +76,13 @@ assert 3 'int main() { int foo; int bar; foo = 1; bar = 2; return foo + bar; }'
 assert 10 'int main() { int hello = 10; return hello; }'
 assert 14 'int main() { int a_b = 3; int c_d = 5; int e = a_b + c_d; return a_b + c_d + e - 2; }'
 
+# Step 2.4: if statement
+assert 1 'int main() { if (1) return 1; return 0; }'
+assert 0 'int main() { if (0) return 1; return 0; }'
+assert 2 'int main() { if (0) return 1; else return 2; }'
+assert 1 'int main() { if (1) return 1; else return 2; }'
+assert 4 'int main() { int a = 0; if (1) a = 4; return a; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
