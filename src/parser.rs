@@ -1395,25 +1395,26 @@ impl<'a> Parser<'a> {
             }
         };
         self.advance();
+
+        // Check for array dimension inside parens: (*name[N])
+        let mut array_size: Option<usize> = None;
+        if self.current().kind == TokenKind::LBracket {
+            self.advance();
+            let size = self.eval_const_expr();
+            self.expect(TokenKind::RBracket);
+            array_size = Some(size as usize);
+        }
+
         self.expect(TokenKind::RParen);  // )
 
-        if self.current().kind == TokenKind::LBracket {
+        if self.current().kind == TokenKind::LBracket && array_size.is_none() {
             // Array pointer: type (*name)[size]
             self.advance();
-            let size = match &self.current().kind {
-                TokenKind::Num(n) => *n as usize,
-                _ => {
-                    self.reporter.error_at(
-                        self.current().pos,
-                        "expected array size",
-                    );
-                }
-            };
-            self.advance();
+            let size = self.eval_const_expr();
             self.expect(TokenKind::RBracket);
 
             // type (*name)[N] is a pointer to array of N elements of type
-            let arr_ty = Type::array_of(base_ty, size);
+            let arr_ty = Type::array_of(base_ty, size as usize);
             let ptr_ty = Type::ptr_to(arr_ty);
             let unique = self.declare_var(&name, ptr_ty.clone());
 
@@ -1425,16 +1426,29 @@ impl<'a> Parser<'a> {
             };
             self.expect(TokenKind::Semicolon);
             Stmt::VarDecl { name: unique, ty: ptr_ty, init }
-        } else {
+        } else if self.current().kind == TokenKind::LParen {
             // Function pointer: type (*name)(param_types)
-            self.expect(TokenKind::LParen);
+            // Or function pointer array: type (*name[N])(param_types)
+            self.advance(); // skip (
             while self.current().kind != TokenKind::RParen {
-                if self.is_type_start(&self.current().kind.clone()) {
+                if self.current().kind == TokenKind::Ellipsis {
+                    self.advance();
+                } else if self.is_type_start(&self.current().kind.clone()) {
                     let _param_ty = self.parse_type();
                     // Skip optional parameter name
                     if let TokenKind::Ident(_) = &self.current().kind {
                         self.advance();
                     }
+                    // Skip array dimensions in params
+                    while self.current().kind == TokenKind::LBracket {
+                        self.advance();
+                        while self.current().kind != TokenKind::RBracket {
+                            self.advance();
+                        }
+                        self.expect(TokenKind::RBracket);
+                    }
+                } else if self.current().kind == TokenKind::Void {
+                    self.advance();
                 }
                 if self.current().kind == TokenKind::Comma {
                     self.advance();
@@ -1442,18 +1456,41 @@ impl<'a> Parser<'a> {
             }
             self.expect(TokenKind::RParen);
 
-            // Function pointer is stored as Ptr(Void) — an 8-byte pointer
+            if let Some(arr_len) = array_size {
+                // Function pointer array: type (*name[N])(params)
+                // Each element is a function pointer (8 bytes)
+                let fptr_ty = Type::ptr_to(Type::void());
+                let arr_ty = Type::array_of(fptr_ty, arr_len);
+                let unique = self.declare_var(&name, arr_ty.clone());
+
+                let init = if self.current().kind == TokenKind::Eq {
+                    self.advance();
+                    Some(self.assign())
+                } else {
+                    None
+                };
+                self.expect(TokenKind::Semicolon);
+                Stmt::VarDecl { name: unique, ty: arr_ty, init }
+            } else {
+                // Function pointer: type (*name)(params)
+                let fptr_ty = Type::ptr_to(Type::void());
+                let unique = self.declare_var(&name, fptr_ty.clone());
+
+                let init = if self.current().kind == TokenKind::Eq {
+                    self.advance();
+                    Some(self.assign())
+                } else {
+                    None
+                };
+                self.expect(TokenKind::Semicolon);
+                Stmt::VarDecl { name: unique, ty: fptr_ty, init }
+            }
+        } else {
+            // Plain pointer declaration (shouldn't normally reach here)
             let fptr_ty = Type::ptr_to(Type::void());
             let unique = self.declare_var(&name, fptr_ty.clone());
-
-            let init = if self.current().kind == TokenKind::Eq {
-                self.advance();
-                Some(self.assign())
-            } else {
-                None
-            };
             self.expect(TokenKind::Semicolon);
-            Stmt::VarDecl { name: unique, ty: fptr_ty, init }
+            Stmt::VarDecl { name: unique, ty: fptr_ty, init: None }
         }
     }
 

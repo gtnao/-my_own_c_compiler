@@ -976,6 +976,15 @@ int main() { pid_t p = 0; return p; }'
 assert 0 '#include <ctype.h>
 int main() { return 0; }'
 
+# Step 15.3: Complex type declarators
+# Pointer array: int *arr[3]
+assert 2 'int main() { int a=1; int b=2; int c=3; int *arr[3]; arr[0]=&a; arr[1]=&b; arr[2]=&c; return *arr[1]; }'
+# Array pointer: int (*p)[3]
+assert 20 'int main() { int arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; int (*p)[3]=&arr; return (*p)[1]; }'
+# Function pointer array: int (*ops[2])(int,int)
+assert 13 'int add(int a, int b){return a+b;} int sub(int a, int b){return a-b;} int main() { int (*ops[2])(int,int); ops[0]=add; ops[1]=sub; return ops[0](10,3); }'
+assert 7 'int add(int a, int b){return a+b;} int sub(int a, int b){return a-b;} int main() { int (*ops[2])(int,int); ops[0]=add; ops[1]=sub; return ops[1](10,3); }'
+
 # Cross-header inclusion test
 assert 0 '#include <stdio.h>
 #include <stdlib.h>
