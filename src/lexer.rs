@@ -219,28 +219,65 @@ impl<'a> Lexer<'a> {
         String::from_utf8(self.input[start..self.pos].to_vec()).unwrap()
     }
 
-    fn read_string(&mut self) -> String {
+    fn read_string(&mut self) -> Vec<u8> {
         self.pos += 1; // skip opening '"'
-        let mut s = String::new();
+        let mut s = Vec::new();
         while self.pos < self.input.len() {
-            let c = self.input[self.pos] as char;
-            if c == '"' {
+            let c = self.input[self.pos];
+            if c == b'"' {
                 self.pos += 1; // skip closing '"'
                 return s;
             }
-            if c == '\\' {
+            if c == b'\\' {
                 self.pos += 1;
                 if self.pos < self.input.len() {
-                    let escaped = match self.input[self.pos] as char {
-                        'n' => '\n',
-                        't' => '\t',
-                        '\\' => '\\',
-                        '"' => '"',
-                        '0' => '\0',
-                        other => other,
-                    };
-                    s.push(escaped);
-                    self.pos += 1;
+                    let ch = self.input[self.pos];
+                    match ch {
+                        b'n' => { s.push(b'\n'); self.pos += 1; }
+                        b't' => { s.push(b'\t'); self.pos += 1; }
+                        b'r' => { s.push(b'\r'); self.pos += 1; }
+                        b'a' => { s.push(0x07); self.pos += 1; } // bell
+                        b'b' => { s.push(0x08); self.pos += 1; } // backspace
+                        b'f' => { s.push(0x0C); self.pos += 1; } // form feed
+                        b'v' => { s.push(0x0B); self.pos += 1; } // vertical tab
+                        b'\\' => { s.push(b'\\'); self.pos += 1; }
+                        b'\'' => { s.push(b'\''); self.pos += 1; }
+                        b'"' => { s.push(b'"'); self.pos += 1; }
+                        b'?' => { s.push(b'?'); self.pos += 1; }
+                        b'0'..=b'7' => {
+                            // Octal escape: 1-3 digits
+                            let mut val = (ch - b'0') as u32;
+                            self.pos += 1;
+                            for _ in 0..2 {
+                                if self.pos < self.input.len() {
+                                    let d = self.input[self.pos];
+                                    if d >= b'0' && d <= b'7' {
+                                        val = val * 8 + (d - b'0') as u32;
+                                        self.pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                            s.push(val as u8);
+                        }
+                        b'x' => {
+                            // Hex escape: \xNN
+                            self.pos += 1;
+                            let mut val = 0u32;
+                            while self.pos < self.input.len() {
+                                let d = self.input[self.pos] as char;
+                                if d.is_ascii_hexdigit() {
+                                    val = val * 16 + d.to_digit(16).unwrap();
+                                    self.pos += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            s.push(val as u8);
+                        }
+                        other => { s.push(other); self.pos += 1; }
+                    }
                 }
                 continue;
             }

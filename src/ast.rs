@@ -68,7 +68,7 @@ pub enum Expr {
     SizeofExpr(Box<Expr>),
     Addr(Box<Expr>),
     Deref(Box<Expr>),
-    StrLit(String),
+    StrLit(Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

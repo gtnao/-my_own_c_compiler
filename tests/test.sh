@@ -305,6 +305,17 @@ assert 99 'int main() { return "abc"[2]; }'
 assert 10 'int main() { return "\n"[0]; }'
 assert 0 'int main() { return "\0"[0]; }'
 
+# Step 6.2: full escape sequences
+assert 9 'int main() { return "\t"[0]; }'
+assert 13 'int main() { return "\r"[0]; }'
+assert 7 'int main() { return "\a"[0]; }'
+assert 8 'int main() { return "\b"[0]; }'
+assert 92 'int main() { return "\\"[0]; }'
+assert 65 'int main() { return "\x41"[0]; }'
+assert 255 'int main() { return "\xff"[0] & 255; }'
+assert 65 'int main() { return "\101"[0]; }'
+assert 0 'int main() { return "\0"[0]; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

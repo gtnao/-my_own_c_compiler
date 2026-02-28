@@ -15,7 +15,7 @@ pub struct Codegen {
     stack_depth: usize,
     globals: HashSet<String>,
     global_types: HashMap<String, Type>,
-    string_literals: Vec<String>,
+    string_literals: Vec<Vec<u8>>,
 }
 
 impl Codegen {
@@ -70,10 +70,7 @@ impl Codegen {
             self.emit("  .section .rodata");
             for (i, s) in strings.iter().enumerate() {
                 self.emit(&format!(".LC{}:", i));
-                let mut bytes = Vec::new();
-                for &b in s.as_bytes() {
-                    bytes.push(format!("{}", b));
-                }
+                let mut bytes: Vec<String> = s.iter().map(|b| format!("{}", b)).collect();
                 bytes.push("0".to_string()); // null terminator
                 self.emit(&format!("  .byte {}", bytes.join(",")));
             }
