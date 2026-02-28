@@ -273,6 +273,13 @@ assert 10 'int main() { int a[5]; int i; for (i = 0; i < 5; i++) a[i] = i; int s
 assert 1 'int main() { char a[3]; a[0] = 1; return a[0]; }'
 assert 3 'int main() { int a[3]; a[0] = 1; a[1] = 2; a[2] = 3; int *p = a; return p[2]; }'
 
+# Step 5.4: multi-dimensional arrays
+assert 42 'int main() { int a[2][3]; a[0][0] = 42; return a[0][0]; }'
+assert 6 'int main() { int a[2][3]; a[1][2] = 6; return a[1][2]; }'
+assert 15 'int main() { int a[2][3]; int i; int j; int v = 0; for (i = 0; i < 2; i++) for (j = 0; j < 3; j++) { a[i][j] = v; v++; } return a[0][0] + a[0][1] + a[0][2] + a[1][0] + a[1][1] + a[1][2]; }'
+assert 5 'int main() { int a[2][3]; a[1][2] = 5; return a[1][2]; }'
+assert 7 'int main() { char a[2][3]; a[0][1] = 7; return a[0][1]; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

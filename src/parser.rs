@@ -439,7 +439,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // var_decl = type ident ("[" num "]")? ("=" expr)? ";"
+    // var_decl = type ident ("[" num "]")* ("=" expr)? ";"
     fn var_decl(&mut self) -> Stmt {
         let ty = self.parse_type();
         let name = match &self.current().kind {
@@ -453,22 +453,30 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        // Array declaration: ident "[" num "]"
-        let ty = if self.current().kind == TokenKind::LBracket {
-            self.advance();
-            let len = match &self.current().kind {
-                TokenKind::Num(n) => *n as usize,
-                _ => {
-                    self.reporter.error_at(
-                        self.current().pos,
-                        "expected array size",
-                    );
-                }
-            };
-            self.advance();
-            self.expect(TokenKind::RBracket);
-            Type::array_of(ty, len)
-        } else {
+        // Array declaration: ident ("[" num "]")*
+        let ty = {
+            let mut dims = Vec::new();
+            while self.current().kind == TokenKind::LBracket {
+                self.advance();
+                let len = match &self.current().kind {
+                    TokenKind::Num(n) => *n as usize,
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected array size",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::RBracket);
+                dims.push(len);
+            }
+            let mut ty = ty;
+            // Build type from innermost to outermost:
+            // int a[2][3] → Array(Array(Int, 3), 2)
+            for &len in dims.iter().rev() {
+                ty = Type::array_of(ty, len);
+            }
             ty
         };
 

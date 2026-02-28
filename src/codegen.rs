@@ -679,6 +679,7 @@ impl Codegen {
             TypeKind::Short => self.emit("  movswq (%rax), %rax"),
             TypeKind::Int if ty.is_unsigned => self.emit("  movl (%rax), %eax"),
             TypeKind::Int => self.emit("  movslq (%rax), %rax"),
+            TypeKind::Array(_, _) => {} // array-to-pointer decay: address is the value
             _ => self.emit("  mov (%rax), %rax"), // long, ptr
         }
     }
