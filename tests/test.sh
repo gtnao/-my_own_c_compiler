@@ -829,6 +829,15 @@ assert 7 'int add(int a, int b) { return a + b; } int main() { return add(3, 4);
 assert 10 'struct Foo; typedef struct Foo *FooPtr; struct Foo { int x; int y; }; int main() { struct Foo f; f.x = 3; f.y = 7; FooPtr p = &f; return p->x + p->y; }'
 assert 5 'struct Ctx; typedef struct Ctx *CtxPtr; struct Ctx { int type; CtxPtr parent; }; int main() { struct Ctx c; c.type = 5; c.parent = 0; CtxPtr p = &c; return p->type; }'
 
+# Step 14.22: built-in fixed-width integer types
+assert 1 'int main() { int8_t a = 1; return a; }'
+assert 2 'int main() { int16_t a = 2; return a; }'
+assert 4 'int main() { return sizeof(int32_t); }'
+assert 8 'int main() { return sizeof(int64_t); }'
+assert 8 'int main() { return sizeof(uint64_t); }'
+assert 8 'int main() { return sizeof(size_t); }'
+assert 8 'int main() { return sizeof(ptrdiff_t); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

@@ -21,6 +21,21 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: Vec<Token>, reporter: &'a ErrorReporter) -> Self {
+        let mut typedefs = HashMap::new();
+        // Register built-in fixed-width integer type aliases
+        typedefs.insert("int8_t".to_string(), Type::char_type());
+        typedefs.insert("int16_t".to_string(), Type::short_type());
+        typedefs.insert("int32_t".to_string(), Type::int_type());
+        typedefs.insert("int64_t".to_string(), Type::long_type());
+        typedefs.insert("uint8_t".to_string(), Type::uchar());
+        typedefs.insert("uint16_t".to_string(), Type::ushort());
+        typedefs.insert("uint32_t".to_string(), Type::uint());
+        typedefs.insert("uint64_t".to_string(), Type::ulong());
+        typedefs.insert("size_t".to_string(), Type::ulong());
+        typedefs.insert("ssize_t".to_string(), Type::long_type());
+        typedefs.insert("intptr_t".to_string(), Type::long_type());
+        typedefs.insert("uintptr_t".to_string(), Type::ulong());
+        typedefs.insert("ptrdiff_t".to_string(), Type::long_type());
         Self {
             tokens,
             pos: 0,
@@ -31,7 +46,7 @@ impl<'a> Parser<'a> {
             globals: Vec::new(),
             struct_tags: HashMap::new(),
             enum_values: HashMap::new(),
-            typedefs: HashMap::new(),
+            typedefs,
             extern_names: std::collections::HashSet::new(),
         }
     }
