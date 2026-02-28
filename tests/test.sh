@@ -926,6 +926,62 @@ assert 30 '#define ADD(a, b) \
     ((a) + (b))
 int main() { return ADD(10, 20); }'
 
+# Phase 17: Standard library header stubs
+
+# Step 17.1: stddef.h / stdint.h / stdbool.h
+assert 0 '#include <stddef.h>
+int main() { size_t s = 8; return s - 8; }'
+assert 1 '#include <stdbool.h>
+int main() { bool b = true; return b; }'
+assert 0 '#include <stdbool.h>
+int main() { bool b = false; return b; }'
+assert 0 '#include <stdint.h>
+int main() { int32_t a = 42; uint64_t b = 100; return a + b - 142; }'
+
+# Step 17.2: stdio.h / stdlib.h
+assert 0 '#include <stdio.h>
+int main() { return EOF + 1; }'
+assert 0 '#include <stdlib.h>
+int main() { return EXIT_SUCCESS; }'
+assert 1 '#include <stdlib.h>
+int main() { return EXIT_FAILURE; }'
+
+# Step 17.3: string.h
+assert 5 '#include <string.h>
+int main() { return strlen("hello"); }'
+assert 0 '#include <string.h>
+int main() { return strcmp("abc", "abc"); }'
+
+# Step 17.4: stdarg.h (via stdio.h)
+assert 0 '#include <stdio.h>
+int main() { return 0; }'
+
+# Step 17.5: errno.h / limits.h / assert.h
+assert 22 '#include <errno.h>
+int main() { return EINVAL; }'
+assert 0 '#include <limits.h>
+int main() { int x = INT_MAX; return x - 2147483647; }'
+assert 8 '#include <limits.h>
+int main() { return CHAR_BIT; }'
+
+# Step 17.6: sys/ headers (POSIX)
+assert 0 '#include <unistd.h>
+int main() { return STDIN_FILENO; }'
+assert 1 '#include <unistd.h>
+int main() { return STDOUT_FILENO; }'
+assert 0 '#include <fcntl.h>
+int main() { return O_RDONLY; }'
+assert 0 '#include <sys/types.h>
+int main() { pid_t p = 0; return p; }'
+assert 0 '#include <ctype.h>
+int main() { return 0; }'
+
+# Cross-header inclusion test
+assert 0 '#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+int main() { char *s = malloc(10); strcpy(s, "test"); int r = strcmp(s, "test"); free(s); return r; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

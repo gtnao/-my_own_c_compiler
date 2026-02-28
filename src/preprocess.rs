@@ -147,7 +147,7 @@ fn preprocess_recursive(
 
         if trimmed.starts_with("#include") {
             let rest = trimmed["#include".len()..].trim();
-            let (include_path, _is_system) = if rest.starts_with('"') {
+            let (include_path, is_system) = if rest.starts_with('"') {
                 let end = rest[1..].find('"').map(|i| i + 1);
                 if let Some(end) = end {
                     (rest[1..end].to_string(), false)
@@ -171,23 +171,58 @@ fn preprocess_recursive(
                 continue;
             };
 
-            let resolved = dir.join(&include_path);
-            if let Ok(canonical) = resolved.canonicalize() {
-                if included.contains(&canonical) {
-                    continue;
-                }
-                included.insert(canonical);
+            // Build search paths
+            let mut search_paths: Vec<PathBuf> = Vec::new();
+            if !is_system {
+                search_paths.push(dir.to_path_buf());
+            }
+            // Add compiler built-in include directory
+            let exe_path = std::env::current_exe().unwrap_or_default();
+            let exe_dir = exe_path.parent().unwrap_or(Path::new("."));
+            // Look for include/ relative to the binary, then relative to project root
+            search_paths.push(exe_dir.join("../../include"));
+            search_paths.push(exe_dir.join("../include"));
+            search_paths.push(exe_dir.join("include"));
+            // Also check near Cargo.toml (development)
+            if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+                search_paths.push(PathBuf::from(&manifest_dir).join("include"));
+            }
+            // Check the working directory's include/ as well
+            search_paths.push(PathBuf::from("include"));
+            // System include paths for real system headers
+            if is_system {
+                search_paths.push(dir.to_path_buf());
+                search_paths.push(PathBuf::from("/usr/include"));
+                search_paths.push(PathBuf::from("/usr/local/include"));
             }
 
-            if let Ok(contents) = std::fs::read_to_string(&resolved) {
-                let processed = preprocess_recursive(
-                    &contents,
-                    resolved.to_str().unwrap_or(&include_path),
-                    included,
-                    macros,
-                );
-                result.push_str(&processed);
-                result.push('\n');
+            let mut found = false;
+            for search_dir in &search_paths {
+                let resolved = search_dir.join(&include_path);
+                if resolved.exists() {
+                    if let Ok(canonical) = resolved.canonicalize() {
+                        if included.contains(&canonical) {
+                            found = true;
+                            break;
+                        }
+                        included.insert(canonical);
+                    }
+                    if let Ok(contents) = std::fs::read_to_string(&resolved) {
+                        let processed = preprocess_recursive(
+                            &contents,
+                            resolved.to_str().unwrap_or(&include_path),
+                            included,
+                            macros,
+                        );
+                        result.push_str(&processed);
+                        result.push('\n');
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                // Silently ignore missing headers
             }
         } else if trimmed.starts_with("#define") {
             let rest = trimmed["#define".len()..].trim();
