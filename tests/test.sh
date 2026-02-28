@@ -36,6 +36,14 @@ assert 255 '255'
 assert 1 '1'
 assert 100 '100'
 
+# Step 1.2: addition and subtraction
+assert 21 '5+20-4'
+assert 0 '0+0'
+assert 10 '10'
+assert 3 '1+2'
+assert 5 '10-5'
+assert 15 '1+2+3+4+5'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
