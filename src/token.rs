@@ -30,6 +30,8 @@ pub enum TokenKind {
     Typedef,
     Static,
     Extern,
+    Const,
+    Volatile,
     // Operators
     Plus,
     PlusPlus,

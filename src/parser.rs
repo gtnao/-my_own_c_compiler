@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -150,9 +150,12 @@ impl<'a> Parser<'a> {
                 i += 1;
             }
         }
-        // Skip pointer stars
+        // Skip pointer stars and qualifiers
         while self.tokens[i].kind == TokenKind::Star {
             i += 1;
+            while matches!(self.tokens[i].kind, TokenKind::Const | TokenKind::Volatile) {
+                i += 1;
+            }
         }
         if let TokenKind::Ident(_) = &self.tokens[i].kind {
             return self.tokens[i + 1].kind == TokenKind::LParen;
@@ -382,6 +385,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Type {
+        // Skip type qualifiers (const, volatile)
+        while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+            self.advance();
+        }
         let is_unsigned = if self.current().kind == TokenKind::Unsigned {
             self.advance();
             true
@@ -489,9 +496,13 @@ impl<'a> Parser<'a> {
             }
         };
 
-        // Parse pointer stars: type "*"*
+        // Parse pointer stars: type ("*" qualifier*)*
         while self.current().kind == TokenKind::Star {
             self.advance();
+            // Skip qualifiers after * (e.g., int *const p)
+            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+                self.advance();
+            }
             ty = Type::ptr_to(ty);
         }
 
@@ -839,7 +850,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile => {
                 self.var_decl()
             }
             _ => {

@@ -78,6 +78,8 @@ impl<'a> Lexer<'a> {
                     "extern" => TokenKind::Extern,
                     "unsigned" => TokenKind::Unsigned,
                     "void" => TokenKind::Void,
+                    "const" => TokenKind::Const,
+                    "volatile" => TokenKind::Volatile,
                     "_Bool" => TokenKind::Bool,
                     _ => TokenKind::Ident(word),
                 };
