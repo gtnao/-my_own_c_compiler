@@ -41,6 +41,7 @@ pub enum TokenKind {
     Generic,
     Attribute,
     Inline,
+    Noreturn,
     // Operators
     Plus,
     PlusPlus,

@@ -108,7 +108,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -492,7 +492,7 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> Type {
         // Skip __attribute__ and inline before type
         self.skip_attribute();
-        while self.current().kind == TokenKind::Inline {
+        while matches!(self.current().kind, TokenKind::Inline | TokenKind::Noreturn) {
             self.advance();
         }
         self.skip_attribute();
@@ -1019,7 +1019,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn => {
                 self.var_decl()
             }
             _ => {

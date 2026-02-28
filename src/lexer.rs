@@ -91,6 +91,8 @@ impl<'a> Lexer<'a> {
                     "inline" => TokenKind::Inline,
                     "__inline" => TokenKind::Inline,
                     "__inline__" => TokenKind::Inline,
+                    "_Noreturn" => TokenKind::Noreturn,
+                    "__noreturn__" => TokenKind::Noreturn,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });
