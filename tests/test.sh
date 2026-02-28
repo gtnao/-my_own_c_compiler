@@ -372,6 +372,12 @@ assert 42 'int main() { union { int a; int b; } u; u.a = 42; return u.b; }'
 assert 3 'int main() { union { int x; char y; } u; u.x = 3; return u.y; }'
 assert 10 'int main() { union U { int a; int b; }; union U u; u.a = 10; return u.b; }'
 
+# Step 7.6: nested structs/unions
+assert 6 'int main() { struct { struct { int x; int y; } inner; int z; } s; s.inner.x = 1; s.inner.y = 2; s.z = 3; return s.inner.x + s.inner.y + s.z; }'
+assert 12 'int main() { return sizeof(struct { struct { int x; int y; } inner; int z; }); }'
+assert 42 'int main() { struct { union { int a; int b; } u; int c; } s; s.u.a = 42; return s.u.b; }'
+assert 5 'int main() { struct O { struct I { int x; } inner; }; struct O o; o.inner.x = 5; return o.inner.x; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
