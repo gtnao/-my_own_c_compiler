@@ -820,6 +820,11 @@ assert 3 'struct P { int x; int y; }; void modify(struct P p) { p.x = 99; } int 
 # Struct with char member
 assert 97 'struct S { char c; int n; }; int get(struct S s) { return s.c; } int main() { struct S s; s.c = 97; s.n = 42; return get(s); }'
 
+# Step 14.20: struct forward declarations, void parameter, PostgreSQL patterns
+assert 5 'void noop(void) {} int main() { noop(); return 5; }'
+assert 3 'struct List; struct List { int val; }; int main() { struct List l; l.val = 3; return l.val; }'
+assert 7 'int add(int a, int b) { return a + b; } int main() { return add(3, 4); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

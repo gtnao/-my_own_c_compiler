@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast::{BinOp, Expr, Function, Program, Stmt, UnaryOp};
 use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
-use crate::types::{StructMember, Type};
+use crate::types::{StructMember, Type, TypeKind};
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
@@ -535,14 +535,17 @@ impl<'a> Parser<'a> {
             }
             ty
         } else if let Some(ref tag) = tag_name {
-            // Look up tag
+            // Look up tag, or create forward declaration
             match self.struct_tags.get(tag) {
                 Some(ty) => ty.clone(),
                 None => {
-                    self.reporter.error_at(
-                        self.current().pos,
-                        &format!("unknown {} tag '{}'", kind_name, tag),
-                    );
+                    // Forward declaration: register an empty struct/union
+                    let ty = Type {
+                        kind: crate::types::TypeKind::Struct(Vec::new()),
+                        is_unsigned: false,
+                    };
+                    self.struct_tags.insert(tag.clone(), ty.clone());
+                    ty
                 }
             }
         } else {
@@ -775,6 +778,11 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 let mut param_ty = self.parse_type();
+
+                // void as sole parameter means no parameters
+                if param_ty.kind == TypeKind::Void && self.current().kind == TokenKind::RParen {
+                    break;
+                }
 
                 // Function pointer parameter: type (*name)(param_types)
                 if self.current().kind == TokenKind::LParen
