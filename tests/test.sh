@@ -352,6 +352,12 @@ assert 2 'int main() { return sizeof(struct { char a; char b; }); }'
 assert 42 'int main() { struct { char a; long b; } s; s.b = 42; return s.b; }'
 assert 3 'int main() { struct { char a; int b; char c; } s; s.a = 1; s.b = 2; s.c = 3; return s.c; }'
 
+# Step 7.3: arrow operator ->
+assert 3 'int main() { struct { int x; int y; } s; s.x = 1; s.y = 2; struct { int x; int y; } *p = &s; return p->x + p->y; }'
+assert 10 'int main() { struct { int a; } s; s.a = 10; struct { int a; } *p = &s; return p->a; }'
+assert 42 'int main() { struct { int x; int y; } s; struct { int x; int y; } *p = &s; p->x = 42; return s.x; }'
+assert 7 'int main() { struct { int a; int b; } s; s.a = 3; s.b = 4; struct { int a; int b; } *p = &s; return p->a + p->b; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

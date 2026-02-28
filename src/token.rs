@@ -57,6 +57,7 @@ pub enum TokenKind {
     Question,
     Colon,
     Dot,
+    Arrow,
     Comma,
     LParen,
     RParen,

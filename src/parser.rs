@@ -1000,6 +1000,21 @@ impl<'a> Parser<'a> {
                     self.advance();
                     node = Expr::Member(Box::new(node), member_name);
                 }
+                TokenKind::Arrow => {
+                    // p->member is (*p).member
+                    self.advance();
+                    let member_name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected member name after '->'",
+                            );
+                        }
+                    };
+                    self.advance();
+                    node = Expr::Member(Box::new(Expr::Deref(Box::new(node))), member_name);
+                }
                 TokenKind::PlusPlus => {
                     self.advance();
                     node = Expr::PostInc(Box::new(node));
