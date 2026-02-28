@@ -3,15 +3,16 @@ use std::collections::HashMap;
 use crate::ast::{BinOp, Expr, Function, Program, Stmt, UnaryOp};
 use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
+use crate::types::Type;
 
 pub struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
     reporter: &'a ErrorReporter,
-    locals: Vec<String>,
+    locals: Vec<(Type, String)>,
     scopes: Vec<HashMap<String, String>>,
     unique_counter: usize,
-    globals: Vec<String>,
+    globals: Vec<(Type, String)>,
 }
 
 impl<'a> Parser<'a> {
@@ -58,8 +59,8 @@ impl<'a> Parser<'a> {
     }
 
     fn global_var(&mut self) {
-        // "int" ident ";"
-        self.expect(TokenKind::Int);
+        // type ident ";"
+        let ty = self.parse_type();
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
@@ -71,22 +72,33 @@ impl<'a> Parser<'a> {
         };
         self.advance();
         self.expect(TokenKind::Semicolon);
-        self.globals.push(name);
+        self.globals.push((ty, name));
+    }
+
+    /// Parse a type specifier and return the corresponding Type.
+    fn parse_type(&mut self) -> Type {
+        match self.current().kind {
+            TokenKind::Int => {
+                self.advance();
+                Type::Int
+            }
+            TokenKind::Void => {
+                self.advance();
+                Type::Void
+            }
+            _ => {
+                self.reporter.error_at(
+                    self.current().pos,
+                    &format!("expected type, but got {:?}", self.current().kind),
+                );
+            }
+        }
     }
 
     // function_or_prototype = type ident "(" params? ")" ("{" stmt* "}" | ";")
     fn function_or_prototype(&mut self) -> Option<Function> {
-        // Accept "int" or "void" as return type
-        if self.current().kind == TokenKind::Int {
-            self.advance();
-        } else if self.current().kind == TokenKind::Void {
-            self.advance();
-        } else {
-            self.reporter.error_at(
-                self.current().pos,
-                &format!("expected type, but got {:?}", self.current().kind),
-            );
-        }
+        let return_ty = self.parse_type();
+
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
@@ -107,7 +119,7 @@ impl<'a> Parser<'a> {
 
         // Parse parameter list: (type ident ("," type ident)*)?
         if self.current().kind != TokenKind::RParen {
-            self.expect(TokenKind::Int);
+            let param_ty = self.parse_type();
             let param_name = match &self.current().kind {
                 TokenKind::Ident(s) => s.clone(),
                 _ => {
@@ -118,12 +130,12 @@ impl<'a> Parser<'a> {
                 }
             };
             self.advance();
-            let unique = self.declare_var(&param_name);
-            params.push(unique);
+            let unique = self.declare_var(&param_name, param_ty.clone());
+            params.push((param_ty, unique));
 
             while self.current().kind == TokenKind::Comma {
                 self.advance();
-                self.expect(TokenKind::Int);
+                let param_ty = self.parse_type();
                 let param_name = match &self.current().kind {
                     TokenKind::Ident(s) => s.clone(),
                     _ => {
@@ -134,8 +146,8 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
-                let unique = self.declare_var(&param_name);
-                params.push(unique);
+                let unique = self.declare_var(&param_name, param_ty.clone());
+                params.push((param_ty, unique));
             }
         }
         self.expect(TokenKind::RParen);
@@ -157,7 +169,7 @@ impl<'a> Parser<'a> {
         self.leave_scope();
 
         let locals = self.locals.clone();
-        Some(Function { name, params, body, locals })
+        Some(Function { name, return_ty, params, body, locals })
     }
 
     // stmt = "return" expr ";"
@@ -379,9 +391,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // var_decl = "int" ident ("=" expr)? ";"
+    // var_decl = type ident ("=" expr)? ";"
     fn var_decl(&mut self) -> Stmt {
-        self.expect(TokenKind::Int);
+        let ty = self.parse_type();
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
@@ -393,7 +405,7 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        let unique = self.declare_var(&name);
+        let unique = self.declare_var(&name, ty.clone());
 
         let init = if self.current().kind == TokenKind::Eq {
             self.advance();
@@ -402,7 +414,7 @@ impl<'a> Parser<'a> {
             None
         };
         self.expect(TokenKind::Semicolon);
-        Stmt::VarDecl { name: unique, init }
+        Stmt::VarDecl { name: unique, ty, init }
     }
 
     // expr = assign ("," assign)*
@@ -869,15 +881,15 @@ impl<'a> Parser<'a> {
         self.scopes.pop();
     }
 
-    fn declare_var(&mut self, name: &str) -> String {
+    fn declare_var(&mut self, name: &str, ty: Type) -> String {
         // Generate a unique internal name if the variable already exists
-        let unique = if self.locals.iter().any(|l| l == name) {
+        let unique = if self.locals.iter().any(|(_, n)| n == name) {
             self.unique_counter += 1;
             format!("{}.{}", name, self.unique_counter)
         } else {
             name.to_string()
         };
-        self.locals.push(unique.clone());
+        self.locals.push((ty, unique.clone()));
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(name.to_string(), unique.clone());
         }
@@ -914,6 +926,7 @@ mod tests {
         let prog = parse_program("int main() { return 42; }");
         assert_eq!(prog.functions.len(), 1);
         assert_eq!(prog.functions[0].name, "main");
+        assert_eq!(prog.functions[0].return_ty, Type::Int);
         assert_eq!(prog.functions[0].body.len(), 1);
         assert_eq!(prog.functions[0].body[0], Stmt::Return(Some(Expr::Num(42))));
     }
@@ -941,7 +954,7 @@ mod tests {
     fn test_var_decl() {
         let prog = parse_program("int main() { int a; a = 3; return a; }");
         assert_eq!(prog.functions[0].body.len(), 3);
-        assert_eq!(prog.functions[0].body[0], Stmt::VarDecl { name: "a".to_string(), init: None });
+        assert_eq!(prog.functions[0].body[0], Stmt::VarDecl { name: "a".to_string(), ty: Type::Int, init: None });
     }
 
     #[test]
@@ -950,7 +963,7 @@ mod tests {
         assert_eq!(prog.functions[0].body.len(), 2);
         assert_eq!(
             prog.functions[0].body[0],
-            Stmt::VarDecl { name: "a".to_string(), init: Some(Expr::Num(5)) }
+            Stmt::VarDecl { name: "a".to_string(), ty: Type::Int, init: Some(Expr::Num(5)) }
         );
     }
 
@@ -972,7 +985,22 @@ mod tests {
     #[test]
     fn test_global_var() {
         let prog = parse_program("int g; int main() { g = 5; return g; }");
-        assert_eq!(prog.globals, vec!["g".to_string()]);
+        assert_eq!(prog.globals, vec![(Type::Int, "g".to_string())]);
         assert_eq!(prog.functions.len(), 1);
+    }
+
+    #[test]
+    fn test_void_function() {
+        let prog = parse_program("void noop() {} int main() { return 0; }");
+        assert_eq!(prog.functions[0].return_ty, Type::Void);
+        assert_eq!(prog.functions[1].return_ty, Type::Int);
+    }
+
+    #[test]
+    fn test_function_params_typed() {
+        let prog = parse_program("int add(int a, int b) { return a + b; }");
+        assert_eq!(prog.functions[0].params.len(), 2);
+        assert_eq!(prog.functions[0].params[0], (Type::Int, "a".to_string()));
+        assert_eq!(prog.functions[0].params[1], (Type::Int, "b".to_string()));
     }
 }

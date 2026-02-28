@@ -1,3 +1,5 @@
+use crate::types::Type;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
     Add,
@@ -66,6 +68,7 @@ pub enum Stmt {
     ExprStmt(Expr),
     VarDecl {
         name: String,
+        ty: Type,
         init: Option<Expr>,
     },
     If {
@@ -105,13 +108,14 @@ pub enum Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: String,
-    pub params: Vec<String>,
+    pub return_ty: Type,
+    pub params: Vec<(Type, String)>,
     pub body: Vec<Stmt>,
-    pub locals: Vec<String>,
+    pub locals: Vec<(Type, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub globals: Vec<String>,
+    pub globals: Vec<(Type, String)>,
     pub functions: Vec<Function>,
 }

@@ -1,4 +1,5 @@
 use crate::ast::{BinOp, Expr, Function, Program, Stmt, UnaryOp};
+use crate::types::Type;
 use std::collections::{HashMap, HashSet};
 
 pub struct Codegen {
@@ -12,6 +13,7 @@ pub struct Codegen {
     current_func_name: String,
     stack_depth: usize,
     globals: HashSet<String>,
+    global_types: HashMap<String, Type>,
 }
 
 impl Codegen {
@@ -27,6 +29,7 @@ impl Codegen {
             current_func_name: String::new(),
             stack_depth: 0,
             globals: HashSet::new(),
+            global_types: HashMap::new(),
         }
     }
 
@@ -37,15 +40,18 @@ impl Codegen {
     }
 
     pub fn generate(&mut self, program: &Program) -> String {
-        // Register global variable names
-        for name in &program.globals {
+        // Register global variable names and types
+        for (ty, name) in &program.globals {
             self.globals.insert(name.clone());
+            self.global_types.insert(name.clone(), ty.clone());
         }
 
         // Emit global variable declarations in .bss section
         if !program.globals.is_empty() {
-            for name in &program.globals {
-                self.emit(&format!("  .comm {}, 8, 8", name));
+            for (ty, name) in &program.globals {
+                let size = ty.size();
+                let align = ty.align();
+                self.emit(&format!("  .comm {}, {}, {}", name, size, align));
             }
         }
 
@@ -60,13 +66,15 @@ impl Codegen {
         self.current_func_name = func.name.clone();
         self.stack_depth = 0;
 
-        // Set up local variable offsets on stack
+        // Set up local variable offsets on stack using type sizes
         self.locals.clear();
         self.goto_labels.clear();
-        for (i, name) in func.locals.iter().enumerate() {
-            self.locals.insert(name.clone(), (i + 1) * 8);
+        let mut offset = 0;
+        for (ty, name) in &func.locals {
+            offset += ty.size();
+            self.locals.insert(name.clone(), offset);
         }
-        self.stack_size = func.locals.len() * 8;
+        self.stack_size = offset;
         // Align stack to 16 bytes
         if self.stack_size % 16 != 0 {
             self.stack_size = (self.stack_size + 15) & !15;
@@ -82,12 +90,12 @@ impl Codegen {
 
         // Store register parameters to stack (first 6)
         let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
-        for (i, param) in func.params.iter().enumerate().take(6) {
+        for (i, (_ty, param)) in func.params.iter().enumerate().take(6) {
             let offset = self.locals[param];
             self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs[i], offset));
         }
         // Copy stack parameters to local slots (7th and beyond)
-        for (i, param) in func.params.iter().enumerate().skip(6) {
+        for (i, (_ty, param)) in func.params.iter().enumerate().skip(6) {
             let src_offset = 16 + (i - 6) * 8;
             let dst_offset = self.locals[param];
             self.emit(&format!("  mov {}(%rbp), %rax", src_offset));
@@ -262,7 +270,7 @@ impl Codegen {
                 self.continue_labels.pop();
                 self.break_labels.pop();
             }
-            Stmt::VarDecl { name, init } => {
+            Stmt::VarDecl { name, ty: _, init } => {
                 if let Some(expr) = init {
                     self.gen_expr(expr);
                     self.emit_store_var(name);
@@ -583,6 +591,7 @@ mod tests {
             globals: vec![],
             functions: vec![Function {
                 name: "main".to_string(),
+                return_ty: Type::Int,
                 params: vec![],
                 body: vec![Stmt::Return(Some(Expr::Num(42)))],
                 locals: vec![],
@@ -600,15 +609,17 @@ mod tests {
             globals: vec![],
             functions: vec![Function {
                 name: "main".to_string(),
+                return_ty: Type::Int,
                 params: vec![],
                 body: vec![
                     Stmt::VarDecl {
                         name: "a".to_string(),
+                        ty: Type::Int,
                         init: Some(Expr::Num(5)),
                     },
                     Stmt::Return(Some(Expr::Var("a".to_string()))),
                 ],
-                locals: vec!["a".to_string()],
+                locals: vec![(Type::Int, "a".to_string())],
             }],
         };
         let output = codegen.generate(&program);
