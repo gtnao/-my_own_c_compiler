@@ -113,7 +113,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Typeof)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -578,6 +578,21 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Type::bool_type()
             }
+            TokenKind::Typeof => {
+                self.advance();
+                self.expect(TokenKind::LParen);
+                let ty = if self.is_type_start(&self.current().kind.clone()) {
+                    // typeof(type)
+                    let t = self.parse_type();
+                    t
+                } else {
+                    // typeof(expr)
+                    let expr = self.expr();
+                    self.infer_type(&expr)
+                };
+                self.expect(TokenKind::RParen);
+                ty
+            }
             TokenKind::Struct => {
                 self.advance();
                 self.parse_struct_or_union(false)
@@ -1028,7 +1043,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Typeof => {
                 self.var_decl()
             }
             _ => {

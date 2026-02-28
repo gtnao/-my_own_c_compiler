@@ -777,6 +777,13 @@ assert 1 '_Static_assert(1, "ok"); int main() { return 1; }'
 assert 5 'int main() { _Static_assert(sizeof(int) == 4, "int is 4"); return 5; }'
 assert 3 '_Static_assert(1, "a"); _Static_assert(1, "b"); int main() { return 3; }'
 
+# Step 14.14: typeof / __typeof__
+assert 4 'int main() { typeof(int) a = 4; return a; }'
+assert 5 'int main() { int x = 5; typeof(x) y = x; return y; }'
+assert 8 'int main() { return sizeof(typeof(long)); }'
+assert 4 'int main() { return sizeof(__typeof__(int)); }'
+assert 3 'int main() { int a = 3; __typeof(a) b = a; return b; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'

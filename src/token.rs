@@ -39,6 +39,7 @@ pub enum TokenKind {
     Alignof,
     Alignas,
     Generic,
+    Typeof,
     StaticAssert,
     Attribute,
     Inline,
