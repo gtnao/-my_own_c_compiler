@@ -342,6 +342,31 @@ impl<'a> Parser<'a> {
                 };
                 self.advance();
 
+                // Check for array member: name "[" num? "]"
+                let mem_ty = if self.current().kind == TokenKind::LBracket {
+                    self.advance();
+                    if self.current().kind == TokenKind::RBracket {
+                        // Flexible array member: name[]
+                        self.advance();
+                        Type::array_of(mem_ty, 0)
+                    } else {
+                        let len = match &self.current().kind {
+                            TokenKind::Num(n) => *n as usize,
+                            _ => {
+                                self.reporter.error_at(
+                                    self.current().pos,
+                                    "expected array size",
+                                );
+                            }
+                        };
+                        self.advance();
+                        self.expect(TokenKind::RBracket);
+                        Type::array_of(mem_ty, len)
+                    }
+                } else {
+                    mem_ty
+                };
+
                 // Check for bit-field: "name : width"
                 let bit_width = if self.current().kind == TokenKind::Colon {
                     self.advance();

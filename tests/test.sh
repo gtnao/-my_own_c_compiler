@@ -657,6 +657,10 @@ assert 3 'int main() { struct { int a : 4; int b : 4; } s; s.a = 5; s.b = 3; ret
 assert 7 'int main() { struct { int x : 3; int y : 5; } s; s.x = 7; s.y = 31; return s.x; }'
 assert 31 'int main() { struct { int x : 3; int y : 5; } s; s.x = 7; s.y = 31; return s.y; }'
 
+# Step 12.10: Flexible array member and struct array members
+assert 3 'int main() { struct { int x; int arr[3]; } s; s.arr[0]=1; s.arr[1]=2; s.arr[2]=3; return s.arr[1]+s.arr[0]; }'
+assert 4 'int main() { struct { int len; int data[]; } *p; char buf[20]; p = (struct { int len; int data[]; } *)buf; p->len = 3; p->data[0] = 4; return p->data[0]; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
