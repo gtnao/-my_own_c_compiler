@@ -18,10 +18,11 @@ pub struct Codegen {
     string_literals: Vec<Vec<u8>>,
     va_save_area_offset: usize,
     current_func_param_count: usize,
+    filename: String,
 }
 
 impl Codegen {
-    pub fn new() -> Self {
+    pub fn new(filename: &str) -> Self {
         Self {
             output: String::new(),
             locals: HashMap::new(),
@@ -38,6 +39,7 @@ impl Codegen {
             string_literals: Vec::new(),
             va_save_area_offset: 0,
             current_func_param_count: 0,
+            filename: filename.to_string(),
         }
     }
 
@@ -48,6 +50,9 @@ impl Codegen {
     }
 
     pub fn generate(&mut self, program: &Program) -> String {
+        // Emit debug file directive
+        self.emit(&format!("  .file \"{}\"", self.filename));
+
         // Register global variable names and types
         for (ty, name, _) in &program.globals {
             self.globals.insert(name.clone());
@@ -1194,7 +1199,7 @@ mod tests {
 
     #[test]
     fn test_return_number() {
-        let mut codegen = Codegen::new();
+        let mut codegen = Codegen::new("test.c");
         let program = Program {
             globals: vec![],
             extern_names: std::collections::HashSet::new(),
@@ -1214,7 +1219,7 @@ mod tests {
 
     #[test]
     fn test_var_decl_and_return() {
-        let mut codegen = Codegen::new();
+        let mut codegen = Codegen::new("test.c");
         let program = Program {
             globals: vec![],
             extern_names: std::collections::HashSet::new(),
@@ -1242,7 +1247,7 @@ mod tests {
 
     #[test]
     fn test_char_var() {
-        let mut codegen = Codegen::new();
+        let mut codegen = Codegen::new("test.c");
         let program = Program {
             globals: vec![],
             extern_names: std::collections::HashSet::new(),
@@ -1270,7 +1275,7 @@ mod tests {
 
     #[test]
     fn test_unsigned_char_var() {
-        let mut codegen = Codegen::new();
+        let mut codegen = Codegen::new("test.c");
         let program = Program {
             globals: vec![],
             extern_names: std::collections::HashSet::new(),

@@ -2424,10 +2424,8 @@ mod tests {
     fn test_return_add() {
         let prog = parse_program("int main() { return 1 + 2; }");
         assert_eq!(prog.functions[0].body.len(), 1);
-        match &prog.functions[0].body[0] {
-            Stmt::Return(Some(Expr::BinOp { op: BinOp::Add, .. })) => {}
-            _ => panic!("expected return with add"),
-        }
+        // Constant folding: 1 + 2 = 3
+        assert_eq!(prog.functions[0].body[0], Stmt::Return(Some(Expr::Num(3))));
     }
 
     #[test]

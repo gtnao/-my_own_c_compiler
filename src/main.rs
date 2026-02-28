@@ -42,7 +42,7 @@ fn main() {
     let mut parser = Parser::new(tokens, &reporter);
     let program = parser.parse();
 
-    let mut codegen = Codegen::new();
+    let mut codegen = Codegen::new(filename);
     let output = codegen.generate(&program);
 
     print!("{}", output);
