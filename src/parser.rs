@@ -2016,22 +2016,51 @@ impl<'a> Parser<'a> {
         // Parse optional initializer
         let init_bytes = if self.current().kind == TokenKind::Eq {
             self.advance();
-            let val = match &self.current().kind {
-                TokenKind::Num(n) => *n,
-                _ => {
-                    self.reporter.error_at(
-                        self.current().pos,
-                        "expected constant in static initializer",
-                    );
+            if self.current().kind == TokenKind::LBrace {
+                // Struct/array initializer: { val1, val2, ... }
+                self.advance();
+                let mut bytes = vec![0u8; ty.size()];
+                let mut offset = 0;
+                while self.current().kind != TokenKind::RBrace {
+                    let val = self.eval_const_expr();
+                    // Determine field size from struct type or use int (4 bytes)
+                    let field_size = match &ty.kind {
+                        crate::types::TypeKind::Struct(members) => {
+                            if let Some(m) = members.iter().find(|m| m.offset == offset) {
+                                m.ty.size()
+                            } else {
+                                4 // default
+                            }
+                        }
+                        _ => 4,
+                    };
+                    for i in 0..field_size {
+                        if offset + i < bytes.len() {
+                            bytes[offset + i] = ((val >> (i * 8)) & 0xff) as u8;
+                        }
+                    }
+                    offset += field_size;
+                    // Align to next field
+                    if let crate::types::TypeKind::Struct(members) = &ty.kind {
+                        if let Some(m) = members.iter().find(|m| m.offset >= offset) {
+                            offset = m.offset;
+                        }
+                    }
+                    if self.current().kind == TokenKind::Comma {
+                        self.advance();
+                    }
                 }
-            };
-            self.advance();
-            let elem_size = ty.size();
-            let mut bytes = Vec::new();
-            for i in 0..elem_size {
-                bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                self.expect(TokenKind::RBrace);
+                Some(bytes)
+            } else {
+                let val = self.eval_const_expr();
+                let elem_size = ty.size();
+                let mut bytes = Vec::new();
+                for i in 0..elem_size {
+                    bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                }
+                Some(bytes)
             }
-            Some(bytes)
         } else {
             None
         };
