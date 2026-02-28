@@ -450,6 +450,32 @@ assert 111 'int main() { char s[] = "hello"; return s[4]; }'
 assert 0 'int main() { char s[] = "hello"; return s[5]; }'
 assert 6 'int main() { char s[] = "hello"; return sizeof(s); }'
 
+# Step 13.7: comprehensive tests
+# FizzBuzz (count FizzBuzz outputs)
+assert 65 'int main() { int count = 0; int i; for (i = 1; i <= 100; i++) { if (i % 15 == 0) count += 4; else if (i % 3 == 0) count += 1; else if (i % 5 == 0) count += 1; } return count; }'
+
+# Fibonacci
+assert 55 'int fib(int n) { if (n <= 1) return n; return fib(n-1) + fib(n-2); } int main() { return fib(10); }'
+assert 89 'int fib(int n) { if (n <= 1) return n; return fib(n-1) + fib(n-2); } int main() { return fib(11); }'
+
+# Iterative factorial
+assert 120 'int main() { int n = 5; int result = 1; int i; for (i = 2; i <= n; i++) result *= i; return result; }'
+
+# Bubble sort
+assert 1 'int main() { int a[] = {5, 3, 1, 4, 2}; int i; int j; for (i = 0; i < 5; i++) for (j = 0; j < 4; j++) if (a[j] > a[j+1]) { int t = a[j]; a[j] = a[j+1]; a[j+1] = t; } return a[0]; }'
+assert 5 'int main() { int a[] = {5, 3, 1, 4, 2}; int i; int j; for (i = 0; i < 5; i++) for (j = 0; j < 4; j++) if (a[j] > a[j+1]) { int t = a[j]; a[j] = a[j+1]; a[j+1] = t; } return a[4]; }'
+
+# GCD (Euclidean algorithm)
+assert 6 'int gcd(int a, int b) { while (b != 0) { int t = b; b = a % b; a = t; } return a; } int main() { return gcd(48, 18); }'
+assert 1 'int gcd(int a, int b) { while (b != 0) { int t = b; b = a % b; a = t; } return a; } int main() { return gcd(7, 13); }'
+
+# Power function
+assert 8 'int power(int base, int exp) { int result = 1; while (exp > 0) { result *= base; exp--; } return result; } int main() { return power(2, 3); }'
+assert 27 'int power(int base, int exp) { int result = 1; while (exp > 0) { result *= base; exp--; } return result; } int main() { return power(3, 3); }'
+
+# Struct-based linked list simulation (via array)
+assert 15 'int main() { int vals[5] = {1, 2, 3, 4, 5}; int sum = 0; int i; for (i = 0; i < 5; i++) sum += vals[i]; return sum; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
