@@ -138,6 +138,13 @@ assert 5 'int main() { return 7 & 5; }'
 assert 7 'int main() { return 5 | 3; }'
 assert 253 'int main() { int a = 2; return ~a & 255; }'
 
+# Step 2.13: comma operator and ternary operator
+assert 3 'int main() { return (1, 2, 3); }'
+assert 10 'int main() { return 1 ? 10 : 20; }'
+assert 20 'int main() { return 0 ? 10 : 20; }'
+assert 5 'int main() { int a = 3; return (a = 5, a); }'
+assert 10 'int main() { int a = 5; return a > 3 ? 10 : 20; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

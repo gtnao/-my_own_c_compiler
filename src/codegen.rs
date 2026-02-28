@@ -164,6 +164,23 @@ impl Codegen {
                     }
                 }
             }
+            Expr::Comma(lhs, rhs) => {
+                self.gen_expr(lhs);
+                self.gen_expr(rhs);
+            }
+            Expr::Ternary { cond, then_expr, else_expr } => {
+                let else_label = self.new_label();
+                let end_label = self.new_label();
+
+                self.gen_expr(cond);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  je {}", else_label));
+                self.gen_expr(then_expr);
+                self.emit(&format!("  jmp {}", end_label));
+                self.emit(&format!("{}:", else_label));
+                self.gen_expr(else_expr);
+                self.emit(&format!("{}:", end_label));
+            }
             Expr::LogicalAnd(lhs, rhs) => {
                 let false_label = self.new_label();
                 let end_label = self.new_label();

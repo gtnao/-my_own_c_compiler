@@ -44,6 +44,12 @@ pub enum Expr {
     },
     LogicalAnd(Box<Expr>, Box<Expr>),
     LogicalOr(Box<Expr>, Box<Expr>),
+    Comma(Box<Expr>, Box<Expr>),
+    Ternary {
+        cond: Box<Expr>,
+        then_expr: Box<Expr>,
+        else_expr: Box<Expr>,
+    },
     PreInc(Box<Expr>),
     PreDec(Box<Expr>),
     PostInc(Box<Expr>),

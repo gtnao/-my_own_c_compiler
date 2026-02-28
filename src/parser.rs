@@ -183,14 +183,22 @@ impl<'a> Parser<'a> {
         Stmt::VarDecl { name, init }
     }
 
-    // expr = assign
+    // expr = assign ("," assign)*
     fn expr(&mut self) -> Expr {
-        self.assign()
+        let mut node = self.assign();
+
+        while self.current().kind == TokenKind::Comma {
+            self.advance();
+            let rhs = self.assign();
+            node = Expr::Comma(Box::new(node), Box::new(rhs));
+        }
+
+        node
     }
 
-    // assign = logical_or ("=" assign | "+=" assign | "-=" assign | "*=" assign | "/=" assign | "%=" assign)?
+    // assign = ternary ("=" assign | "+=" assign | "-=" assign | "*=" assign | "/=" assign | "%=" assign)?
     fn assign(&mut self) -> Expr {
-        let node = self.logical_or();
+        let node = self.ternary();
 
         if self.current().kind == TokenKind::Eq {
             self.advance();
@@ -222,6 +230,25 @@ impl<'a> Parser<'a> {
                     lhs: Box::new(node),
                     rhs: Box::new(rhs),
                 }),
+            };
+        }
+
+        node
+    }
+
+    // ternary = logical_or ("?" expr ":" ternary)?
+    fn ternary(&mut self) -> Expr {
+        let node = self.logical_or();
+
+        if self.current().kind == TokenKind::Question {
+            self.advance();
+            let then_expr = self.expr();
+            self.expect(TokenKind::Colon);
+            let else_expr = self.ternary();
+            return Expr::Ternary {
+                cond: Box::new(node),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
             };
         }
 
