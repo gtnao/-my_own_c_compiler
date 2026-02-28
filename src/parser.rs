@@ -1128,16 +1128,7 @@ impl<'a> Parser<'a> {
                 while self.current().kind != TokenKind::RBrace {
                     if self.current().kind == TokenKind::Case {
                         self.advance();
-                        let val = match &self.current().kind {
-                            TokenKind::Num(n) => *n,
-                            _ => {
-                                self.reporter.error_at(
-                                    self.current().pos,
-                                    "expected integer constant in case",
-                                );
-                            }
-                        };
-                        self.advance();
+                        let val = self.eval_const_expr();
                         self.expect(TokenKind::Colon);
 
                         let mut stmts = Vec::new();

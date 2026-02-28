@@ -829,6 +829,11 @@ assert 7 'int add(int a, int b) { return a + b; } int main() { return add(3, 4);
 assert 10 'struct Foo; typedef struct Foo *FooPtr; struct Foo { int x; int y; }; int main() { struct Foo f; f.x = 3; f.y = 7; FooPtr p = &f; return p->x + p->y; }'
 assert 5 'struct Ctx; typedef struct Ctx *CtxPtr; struct Ctx { int type; CtxPtr parent; }; int main() { struct Ctx c; c.type = 5; c.parent = 0; CtxPtr p = &c; return p->type; }'
 
+# Step 14.28: constant expressions in case labels
+assert 1 'enum { A, B, C }; int main() { int x = B; switch(x) { case A: return 0; case B: return 1; case C: return 2; } return -1; }'
+assert 30 'int main() { int x = 3; switch(x) { case 1+2: return 30; default: return 0; } }'
+assert 8 'int main() { int x = 8; switch(x) { case 1 << 3: return 8; default: return 0; } }'
+
 # Step 14.27: empty statement (bare semicolon)
 assert 10 'int main() { int i; for (i = 0; i < 10; i++); return i; }'
 assert 0 'int main() { ; return 0; }'
