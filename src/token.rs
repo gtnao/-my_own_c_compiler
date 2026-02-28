@@ -3,6 +3,10 @@ pub enum TokenKind {
     Num(i64),
     Plus,
     Minus,
+    Star,
+    Slash,
+    LParen,
+    RParen,
     Eof,
 }
 

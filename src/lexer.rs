@@ -38,6 +38,10 @@ impl Lexer {
             let kind = match ch {
                 '+' => TokenKind::Plus,
                 '-' => TokenKind::Minus,
+                '*' => TokenKind::Star,
+                '/' => TokenKind::Slash,
+                '(' => TokenKind::LParen,
+                ')' => TokenKind::RParen,
                 _ => {
                     eprintln!("Unexpected character '{}' at position {}", ch, self.pos);
                     std::process::exit(1);
