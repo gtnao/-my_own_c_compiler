@@ -154,6 +154,12 @@ assert 30 'int main() { int a = 9; switch (a) { case 1: return 10; case 2: retur
 assert 3 'int main() { int i = 0; while (i < 10) { if (i == 3) break; i++; } return i; }'
 assert 20 'int main() { int a = 2; int r = 0; switch (a) { case 1: r = 10; break; case 2: r = 20; break; default: r = 30; break; } return r; }'
 
+# Step 2.15: continue, goto, labels
+assert 25 'int main() { int s = 0; int i; for (i = 0; i < 10; i++) { if (i % 2 == 0) continue; s += i; } return s; }'
+assert 2 'int main() { goto end; return 1; end: return 2; }'
+assert 10 'int main() { int i = 0; loop: i++; if (i < 10) goto loop; return i; }'
+assert 55 'int main() { int s = 0; int i; for (i = 1; i <= 10; i++) { s += i; if (i == 10) continue; } return s; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

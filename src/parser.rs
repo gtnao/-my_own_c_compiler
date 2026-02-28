@@ -209,6 +209,26 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::Semicolon);
                 Stmt::Break
             }
+            TokenKind::Continue => {
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+                Stmt::Continue
+            }
+            TokenKind::Goto => {
+                self.advance();
+                let name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected label name after goto",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+                Stmt::Goto(name)
+            }
             TokenKind::LBrace => {
                 self.advance();
                 let mut stmts = Vec::new();
@@ -222,6 +242,22 @@ impl<'a> Parser<'a> {
                 self.var_decl()
             }
             _ => {
+                // Check for label: "ident :"
+                if let TokenKind::Ident(name) = &self.current().kind {
+                    if self.pos + 1 < self.tokens.len()
+                        && self.tokens[self.pos + 1].kind == TokenKind::Colon
+                    {
+                        let name = name.clone();
+                        self.advance(); // ident
+                        self.advance(); // :
+                        let stmt = self.stmt();
+                        return Stmt::Label {
+                            name,
+                            stmt: Box::new(stmt),
+                        };
+                    }
+                }
+
                 let expr = self.expr();
                 self.expect(TokenKind::Semicolon);
                 Stmt::ExprStmt(expr)

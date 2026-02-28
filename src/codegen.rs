@@ -7,6 +7,8 @@ pub struct Codegen {
     stack_size: usize,
     label_count: usize,
     break_labels: Vec<String>,
+    continue_labels: Vec<String>,
+    goto_labels: HashMap<String, String>,
 }
 
 impl Codegen {
@@ -17,6 +19,8 @@ impl Codegen {
             stack_size: 0,
             label_count: 0,
             break_labels: Vec::new(),
+            continue_labels: Vec::new(),
+            goto_labels: HashMap::new(),
         }
     }
 
@@ -29,6 +33,7 @@ impl Codegen {
     pub fn generate(&mut self, func: &Function, local_vars: &[String]) -> String {
         // Set up local variable offsets on stack
         self.locals.clear();
+        self.goto_labels.clear();
         for (i, name) in local_vars.iter().enumerate() {
             self.locals.insert(name.clone(), (i + 1) * 8);
         }
@@ -94,6 +99,7 @@ impl Codegen {
                 let end_label = self.new_label();
 
                 self.break_labels.push(end_label.clone());
+                self.continue_labels.push(begin_label.clone());
                 self.emit(&format!("{}:", begin_label));
                 self.gen_expr(cond);
                 self.emit("  cmp $0, %rax");
@@ -101,19 +107,24 @@ impl Codegen {
                 self.gen_stmt(body);
                 self.emit(&format!("  jmp {}", begin_label));
                 self.emit(&format!("{}:", end_label));
+                self.continue_labels.pop();
                 self.break_labels.pop();
             }
             Stmt::DoWhile { body, cond } => {
                 let begin_label = self.new_label();
+                let continue_label = self.new_label();
                 let end_label = self.new_label();
 
                 self.break_labels.push(end_label.clone());
+                self.continue_labels.push(continue_label.clone());
                 self.emit(&format!("{}:", begin_label));
                 self.gen_stmt(body);
+                self.emit(&format!("{}:", continue_label));
                 self.gen_expr(cond);
                 self.emit("  cmp $0, %rax");
                 self.emit(&format!("  jne {}", begin_label));
                 self.emit(&format!("{}:", end_label));
+                self.continue_labels.pop();
                 self.break_labels.pop();
             }
             Stmt::Switch { cond, cases, default } => {
@@ -167,11 +178,27 @@ impl Codegen {
                     self.emit(&format!("  jmp {}", label));
                 }
             }
+            Stmt::Continue => {
+                if let Some(label) = self.continue_labels.last() {
+                    self.emit(&format!("  jmp {}", label));
+                }
+            }
+            Stmt::Goto(name) => {
+                let label = self.get_or_create_goto_label(name);
+                self.emit(&format!("  jmp {}", label));
+            }
+            Stmt::Label { name, stmt } => {
+                let label = self.get_or_create_goto_label(name);
+                self.emit(&format!("{}:", label));
+                self.gen_stmt(stmt);
+            }
             Stmt::For { init, cond, inc, body } => {
                 let begin_label = self.new_label();
+                let continue_label = self.new_label();
                 let end_label = self.new_label();
 
                 self.break_labels.push(end_label.clone());
+                self.continue_labels.push(continue_label.clone());
                 if let Some(init_stmt) = init {
                     self.gen_stmt(init_stmt);
                 }
@@ -182,11 +209,13 @@ impl Codegen {
                     self.emit(&format!("  je {}", end_label));
                 }
                 self.gen_stmt(body);
+                self.emit(&format!("{}:", continue_label));
                 if let Some(inc_expr) = inc {
                     self.gen_expr(inc_expr);
                 }
                 self.emit(&format!("  jmp {}", begin_label));
                 self.emit(&format!("{}:", end_label));
+                self.continue_labels.pop();
                 self.break_labels.pop();
             }
             Stmt::VarDecl { name, init } => {
@@ -398,6 +427,16 @@ impl Codegen {
                     }
                 }
             }
+        }
+    }
+
+    fn get_or_create_goto_label(&mut self, name: &str) -> String {
+        if let Some(label) = self.goto_labels.get(name) {
+            label.clone()
+        } else {
+            let label = self.new_label();
+            self.goto_labels.insert(name.to_string(), label.clone());
+            label
         }
     }
 

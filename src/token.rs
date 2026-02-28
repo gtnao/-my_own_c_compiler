@@ -14,6 +14,8 @@ pub enum TokenKind {
     Case,
     Default,
     Break,
+    Continue,
+    Goto,
     // Operators
     Plus,
     PlusPlus,

@@ -43,6 +43,8 @@ impl<'a> Lexer<'a> {
                     "case" => TokenKind::Case,
                     "default" => TokenKind::Default,
                     "break" => TokenKind::Break,
+                    "continue" => TokenKind::Continue,
+                    "goto" => TokenKind::Goto,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

@@ -90,6 +90,12 @@ pub enum Stmt {
         default: Option<Vec<Stmt>>,
     },
     Break,
+    Continue,
+    Goto(String),
+    Label {
+        name: String,
+        stmt: Box<Stmt>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
