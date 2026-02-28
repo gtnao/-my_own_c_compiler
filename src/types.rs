@@ -77,10 +77,13 @@ impl Type {
                 if members.is_empty() {
                     return 0;
                 }
-                let last = &members[members.len() - 1];
-                let raw_size = last.offset + last.ty.size();
+                // Use max of (offset + size) to handle both struct and union layouts
+                let raw_size = members.iter()
+                    .map(|m| m.offset + m.ty.size())
+                    .max()
+                    .unwrap_or(0);
                 let align = self.align();
-                // Align total size to struct alignment
+                // Align total size to struct/union alignment
                 (raw_size + align - 1) & !(align - 1)
             }
         }

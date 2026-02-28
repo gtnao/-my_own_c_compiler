@@ -49,7 +49,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union)
     }
 
     fn is_function(&self) -> bool {
@@ -61,8 +61,8 @@ impl<'a> Parser<'a> {
         let mut i = self.pos;
         // Skip type keywords
         while Self::is_type_keyword(&self.tokens[i].kind) {
-            // For "struct", skip optional tag name and body
-            if self.tokens[i].kind == TokenKind::Struct {
+            // For "struct"/"union", skip optional tag name and body
+            if self.tokens[i].kind == TokenKind::Struct || self.tokens[i].kind == TokenKind::Union {
                 i += 1;
                 // Skip tag name if present
                 if let TokenKind::Ident(_) = &self.tokens[i].kind {
@@ -139,6 +139,84 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a type specifier and return the corresponding Type.
+    /// Parse struct or union type (after "struct"/"union" keyword is consumed).
+    fn parse_struct_or_union(&mut self, is_union: bool) -> Type {
+        let kind_name = if is_union { "union" } else { "struct" };
+        // Check for tag name
+        let tag_name = if let TokenKind::Ident(s) = &self.current().kind {
+            let name = s.clone();
+            self.advance();
+            Some(name)
+        } else {
+            None
+        };
+
+        // Parse body if present
+        if self.current().kind == TokenKind::LBrace {
+            self.advance();
+            let mut members = Vec::new();
+            let mut offset = 0;
+            while self.current().kind != TokenKind::RBrace {
+                let mem_ty = self.parse_type();
+                let mem_name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected member name",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+                if is_union {
+                    // Union: all members at offset 0
+                    members.push(StructMember {
+                        name: mem_name,
+                        ty: mem_ty.clone(),
+                        offset: 0,
+                    });
+                } else {
+                    // Struct: align offset to member alignment
+                    let align = mem_ty.align();
+                    offset = (offset + align - 1) & !(align - 1);
+                    members.push(StructMember {
+                        name: mem_name,
+                        ty: mem_ty.clone(),
+                        offset,
+                    });
+                    offset += mem_ty.size();
+                }
+            }
+            self.expect(TokenKind::RBrace);
+            let ty = Type {
+                kind: crate::types::TypeKind::Struct(members),
+                is_unsigned: false,
+            };
+            // Register tag if present
+            if let Some(ref tag) = tag_name {
+                self.struct_tags.insert(tag.clone(), ty.clone());
+            }
+            ty
+        } else if let Some(ref tag) = tag_name {
+            // Look up tag
+            match self.struct_tags.get(tag) {
+                Some(ty) => ty.clone(),
+                None => {
+                    self.reporter.error_at(
+                        self.current().pos,
+                        &format!("unknown {} tag '{}'", kind_name, tag),
+                    );
+                }
+            }
+        } else {
+            self.reporter.error_at(
+                self.current().pos,
+                &format!("expected {} tag or body", kind_name),
+            );
+        }
+    }
+
     fn parse_type(&mut self) -> Type {
         let is_unsigned = if self.current().kind == TokenKind::Unsigned {
             self.advance();
@@ -174,71 +252,11 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Struct => {
                 self.advance();
-                // Check for tag name
-                let tag_name = if let TokenKind::Ident(s) = &self.current().kind {
-                    let name = s.clone();
-                    self.advance();
-                    Some(name)
-                } else {
-                    None
-                };
-
-                // Parse body if present
-                let ty = if self.current().kind == TokenKind::LBrace {
-                    self.advance();
-                    let mut members = Vec::new();
-                    let mut offset = 0;
-                    while self.current().kind != TokenKind::RBrace {
-                        let mem_ty = self.parse_type();
-                        let mem_name = match &self.current().kind {
-                            TokenKind::Ident(s) => s.clone(),
-                            _ => {
-                                self.reporter.error_at(
-                                    self.current().pos,
-                                    "expected member name",
-                                );
-                            }
-                        };
-                        self.advance();
-                        self.expect(TokenKind::Semicolon);
-                        // Align offset to member alignment
-                        let align = mem_ty.align();
-                        offset = (offset + align - 1) & !(align - 1);
-                        members.push(StructMember {
-                            name: mem_name,
-                            ty: mem_ty.clone(),
-                            offset,
-                        });
-                        offset += mem_ty.size();
-                    }
-                    self.expect(TokenKind::RBrace);
-                    let ty = Type {
-                        kind: crate::types::TypeKind::Struct(members),
-                        is_unsigned: false,
-                    };
-                    // Register tag if present
-                    if let Some(ref tag) = tag_name {
-                        self.struct_tags.insert(tag.clone(), ty.clone());
-                    }
-                    ty
-                } else if let Some(ref tag) = tag_name {
-                    // Look up tag
-                    match self.struct_tags.get(tag) {
-                        Some(ty) => ty.clone(),
-                        None => {
-                            self.reporter.error_at(
-                                self.current().pos,
-                                &format!("unknown struct tag '{}'", tag),
-                            );
-                        }
-                    }
-                } else {
-                    self.reporter.error_at(
-                        self.current().pos,
-                        "expected struct tag or body",
-                    );
-                };
-                ty
+                self.parse_struct_or_union(false)
+            }
+            TokenKind::Union => {
+                self.advance();
+                self.parse_struct_or_union(true)
             }
             _ => {
                 if is_unsigned {
@@ -531,7 +549,7 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union => {
                 self.var_decl()
             }
             _ => {

@@ -364,6 +364,14 @@ assert 10 'int main() { struct Foo { int a; }; struct Foo f; f.a = 10; return f.
 assert 7 'int main() { struct S { int x; int y; }; struct S a; struct S b; a.x = 3; b.x = 4; return a.x + b.x; }'
 assert 42 'int main() { struct S { int val; }; struct S s; s.val = 42; struct S *p = &s; return p->val; }'
 
+# Step 7.5: unions
+assert 4 'int main() { return sizeof(union { int a; int b; }); }'
+assert 8 'int main() { return sizeof(union { int a; long b; }); }'
+assert 4 'int main() { return sizeof(union { char a; int b; }); }'
+assert 42 'int main() { union { int a; int b; } u; u.a = 42; return u.b; }'
+assert 3 'int main() { union { int x; char y; } u; u.x = 3; return u.y; }'
+assert 10 'int main() { union U { int a; int b; }; union U u; u.a = 10; return u.b; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
