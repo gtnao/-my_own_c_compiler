@@ -146,4 +146,5 @@ pub struct Program {
     pub globals: Vec<(Type, String, Option<Vec<u8>>)>,
     pub functions: Vec<Function>,
     pub extern_names: std::collections::HashSet<String>,
+    pub struct_defs: std::collections::HashMap<String, Type>,
 }

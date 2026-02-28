@@ -171,6 +171,9 @@ fn preprocess_recursive(
     // any_branch_taken: whether any branch in this if/elif/else chain was taken
     let mut cond_stack: Vec<(bool, bool)> = Vec::new();
 
+    let mut pending_line = String::new();
+    let mut pending_join_count: usize = 0;
+
     for (line_no, line) in source.lines().enumerate() {
         let trimmed = line.trim();
 
@@ -384,14 +387,61 @@ fn preprocess_recursive(
         }
         } else {
             // Non-directive line: expand macros
-            let with_predefined = replace_predefined(line, file_path, line_no + 1);
+            // Join multi-line macro invocations: if parens are unbalanced, accumulate lines
+            if !pending_line.is_empty() {
+                pending_line.push(' ');
+            }
+            pending_line.push_str(line);
+            pending_join_count += 1;
+            let paren_balance = count_paren_balance(&pending_line);
+            if paren_balance > 0 {
+                // Unbalanced open parens — accumulate next line(s)
+                continue;
+            }
+            let with_predefined = replace_predefined(&pending_line, file_path, line_no + 1);
             let expanded = expand_macros(&with_predefined, macros);
             result.push_str(&expanded);
             result.push('\n');
+            // Emit extra newlines to preserve line numbering
+            for _ in 1..pending_join_count {
+                result.push('\n');
+            }
+            pending_line.clear();
+            pending_join_count = 0;
         }
     }
 
     result
+}
+
+/// Count parenthesis balance in a line, skipping string/char literals.
+/// Returns positive if there are more '(' than ')'.
+fn count_paren_balance(line: &str) -> i32 {
+    let bytes = line.as_bytes();
+    let mut balance: i32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'"' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() { i += 1; }
+                i += 1;
+            }
+            if i < bytes.len() { i += 1; }
+        } else if bytes[i] == b'\'' {
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'\'' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() { i += 1; }
+                i += 1;
+            }
+            if i < bytes.len() { i += 1; }
+        } else {
+            if bytes[i] == b'(' { balance += 1; }
+            if bytes[i] == b')' { balance -= 1; }
+            i += 1;
+        }
+    }
+    balance
 }
 
 /// Expand macros in a line by replacing identifiers.
@@ -451,7 +501,11 @@ fn expand_macros(line: &str, macros: &HashMap<String, MacroDef>) -> String {
                                 subst_args.push(va_args);
                             }
                             // Substitute parameters in body
-                            let substituted = substitute_params(&body, &subst_params, &subst_args);
+                            // C standard: arguments NOT used with # or ## are macro-expanded first
+                            let expanded_args: Vec<String> = subst_args.iter()
+                                .map(|a| expand_macros(a, macros))
+                                .collect();
+                            let substituted = substitute_params(&body, &subst_params, &expanded_args);
                             let expanded = expand_macros(&substituted, macros);
                             result.push_str(&expanded);
                         } else {

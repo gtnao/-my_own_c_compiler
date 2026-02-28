@@ -22,6 +22,8 @@ pub struct Parser<'a> {
     last_struct_tag: Option<String>,
     /// Tags of forward-declared (empty) structs, for tracking which tag an empty struct came from
     forward_declared_tags: std::collections::HashSet<String>,
+    /// Tags that were forward-declared and later fully defined (need resolution)
+    resolved_forward_tags: std::collections::HashSet<String>,
     extern_names: std::collections::HashSet<String>,
 }
 
@@ -56,6 +58,7 @@ impl<'a> Parser<'a> {
             typedef_struct_tags: HashMap::new(),
             last_struct_tag: None,
             forward_declared_tags: std::collections::HashSet::new(),
+            resolved_forward_tags: std::collections::HashSet::new(),
             extern_names: std::collections::HashSet::new(),
         }
     }
@@ -76,7 +79,31 @@ impl<'a> Parser<'a> {
             // Handle extern declaration (just skip it — no storage allocated)
             if self.current().kind == TokenKind::Extern {
                 self.advance();
+                // Skip qualifiers
+                while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                    self.advance();
+                }
                 let ty = self.parse_type();
+                // Function pointer variable: extern type (*name)(params...);
+                if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && self.tokens[self.pos + 1].kind == TokenKind::Star
+                {
+                    // Skip everything until semicolon
+                    while self.current().kind != TokenKind::Semicolon && self.current().kind != TokenKind::Eof {
+                        self.advance();
+                    }
+                    if self.current().kind == TokenKind::Semicolon { self.advance(); }
+                    continue;
+                }
+                // Skip pointer stars
+                while self.current().kind == TokenKind::Star {
+                    self.advance();
+                }
+                // Skip qualifiers after stars
+                while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                    self.advance();
+                }
                 let name = match &self.current().kind {
                     TokenKind::Ident(s) => s.clone(),
                     _ => {
@@ -208,10 +235,14 @@ impl<'a> Parser<'a> {
                 self.global_var();
             }
         }
+        // Resolve any remaining forward-declared struct references
+        self.resolve_forward_refs();
+
         Program {
             globals: self.globals.clone(),
             functions,
             extern_names: self.extern_names.clone(),
+            struct_defs: self.struct_tags.clone(),
         }
     }
 
@@ -238,19 +269,21 @@ impl<'a> Parser<'a> {
         }
         let mut i = self.pos;
         // Skip type keywords (including typedef names)
-        while self.is_type_start(&self.tokens[i].kind) {
+        while i < self.tokens.len() && self.is_type_start(&self.tokens[i].kind) {
             // For "struct"/"union", skip optional tag name and body
             if self.tokens[i].kind == TokenKind::Struct || self.tokens[i].kind == TokenKind::Union || self.tokens[i].kind == TokenKind::Enum {
                 i += 1;
+                if i >= self.tokens.len() { return false; }
                 // Skip tag name if present
                 if let TokenKind::Ident(_) = &self.tokens[i].kind {
                     i += 1;
+                    if i >= self.tokens.len() { return false; }
                 }
                 // Skip struct body { ... } if present
                 if self.tokens[i].kind == TokenKind::LBrace {
                     i += 1;
                     let mut depth = 1;
-                    while depth > 0 {
+                    while depth > 0 && i < self.tokens.len() {
                         if self.tokens[i].kind == TokenKind::LBrace {
                             depth += 1;
                         } else if self.tokens[i].kind == TokenKind::RBrace {
@@ -258,32 +291,39 @@ impl<'a> Parser<'a> {
                         }
                         i += 1;
                     }
+                    if i >= self.tokens.len() { return false; }
                 }
             } else if self.tokens[i].kind == TokenKind::Alignas || self.tokens[i].kind == TokenKind::Attribute {
                 // Skip _Alignas(...) or __attribute__((...))
                 i += 1;
+                if i >= self.tokens.len() { return false; }
                 if self.tokens[i].kind == TokenKind::LParen {
                     i += 1;
                     let mut depth = 1;
-                    while depth > 0 {
+                    while depth > 0 && i < self.tokens.len() {
                         if self.tokens[i].kind == TokenKind::LParen { depth += 1; }
                         else if self.tokens[i].kind == TokenKind::RParen { depth -= 1; }
                         i += 1;
                     }
+                    if i >= self.tokens.len() { return false; }
                 }
             } else {
                 i += 1;
             }
         }
+        if i >= self.tokens.len() { return false; }
         // Skip pointer stars and qualifiers
-        while self.tokens[i].kind == TokenKind::Star {
+        while i < self.tokens.len() && self.tokens[i].kind == TokenKind::Star {
             i += 1;
-            while matches!(self.tokens[i].kind, TokenKind::Const | TokenKind::Volatile) {
+            while i < self.tokens.len() && matches!(self.tokens[i].kind, TokenKind::Const | TokenKind::Volatile) {
                 i += 1;
             }
         }
+        if i >= self.tokens.len() { return false; }
         if let TokenKind::Ident(_) = &self.tokens[i].kind {
-            return self.tokens[i + 1].kind == TokenKind::LParen;
+            if i + 1 < self.tokens.len() {
+                return self.tokens[i + 1].kind == TokenKind::LParen;
+            }
         }
         false
     }
@@ -450,7 +490,7 @@ impl<'a> Parser<'a> {
                 let mut mem_ty = self.parse_type();
 
                 // Function pointer member: type (*name)(params...)
-                let mem_name = if self.current().kind == TokenKind::LParen
+                let mut mem_name = if self.current().kind == TokenKind::LParen
                     && self.pos + 1 < self.tokens.len()
                     && self.tokens[self.pos + 1].kind == TokenKind::Star
                 {
@@ -490,7 +530,7 @@ impl<'a> Parser<'a> {
                     name
                 } else if self.current().kind == TokenKind::Semicolon {
                     // Anonymous struct/union member: no name, inline members
-                    if let TypeKind::Struct(inner_members) = &mem_ty.kind {
+                    if let TypeKind::Struct(_, inner_members) = &mem_ty.kind {
                         // Flatten inner members into the parent struct
                         for inner in inner_members {
                             let member_offset = if is_union {
@@ -553,7 +593,7 @@ impl<'a> Parser<'a> {
                 };
 
                 // Check for bit-field: "name : width"
-                let bit_width = if self.current().kind == TokenKind::Colon {
+                let mut bit_width = if self.current().kind == TokenKind::Colon {
                     self.advance();
                     let width = match &self.current().kind {
                         TokenKind::Num(n) => *n as usize,
@@ -570,77 +610,101 @@ impl<'a> Parser<'a> {
                     0
                 };
 
-                self.expect(TokenKind::Semicolon);
-                if is_union {
-                    // Union: all members at offset 0
-                    members.push(StructMember {
-                        name: mem_name,
-                        ty: mem_ty.clone(),
-                        offset: 0,
-                        bit_width,
-                        bit_offset: 0,
-                    });
-                } else if bit_width > 0 {
-                    // Bit-field member
-                    let storage_size = mem_ty.size(); // e.g., 4 for int
-                    let storage_bits = storage_size * 8;
-                    // Align to storage unit boundary if needed
-                    let align = mem_ty.align();
-                    if bit_offset == 0 {
+                // Add member and handle comma-separated declarations
+                // e.g., unsigned lp_off:15, lp_flags:2, lp_len:15;
+                loop {
+                    if is_union {
+                        members.push(StructMember {
+                            name: mem_name.clone(),
+                            ty: mem_ty.clone(),
+                            offset: 0,
+                            bit_width,
+                            bit_offset: 0,
+                        });
+                    } else if bit_width > 0 {
+                        let storage_size = mem_ty.size();
+                        let storage_bits = storage_size * 8;
+                        let align = mem_ty.align();
+                        if bit_offset == 0 {
+                            offset = (offset + align - 1) & !(align - 1);
+                        }
+                        if bit_offset + bit_width > storage_bits {
+                            offset += storage_size;
+                            offset = (offset + align - 1) & !(align - 1);
+                            bit_offset = 0;
+                        }
+                        members.push(StructMember {
+                            name: mem_name.clone(),
+                            ty: mem_ty.clone(),
+                            offset,
+                            bit_width,
+                            bit_offset,
+                        });
+                        bit_offset += bit_width;
+                        if bit_offset >= storage_bits {
+                            offset += storage_size;
+                            bit_offset = 0;
+                        }
+                    } else {
+                        if bit_offset > 0 {
+                            let prev_storage = mem_ty.size();
+                            offset += prev_storage;
+                            bit_offset = 0;
+                        }
+                        let align = mem_ty.align();
                         offset = (offset + align - 1) & !(align - 1);
+                        members.push(StructMember {
+                            name: mem_name.clone(),
+                            ty: mem_ty.clone(),
+                            offset,
+                            bit_width: 0,
+                            bit_offset: 0,
+                        });
+                        offset += mem_ty.size();
                     }
-                    // Check if the bit-field fits in current storage unit
-                    if bit_offset + bit_width > storage_bits {
-                        // Move to next storage unit
-                        offset += storage_size;
-                        offset = (offset + align - 1) & !(align - 1);
-                        bit_offset = 0;
+
+                    if self.current().kind != TokenKind::Comma {
+                        break;
                     }
-                    members.push(StructMember {
-                        name: mem_name,
-                        ty: mem_ty.clone(),
-                        offset,
-                        bit_width,
-                        bit_offset,
-                    });
-                    bit_offset += bit_width;
-                    // If we filled the storage unit, advance offset
-                    if bit_offset >= storage_bits {
-                        offset += storage_size;
-                        bit_offset = 0;
-                    }
-                } else {
-                    // Normal member: finish any pending bit-field storage unit
-                    if bit_offset > 0 {
-                        let prev_storage = mem_ty.size(); // approximate
-                        offset += prev_storage;
-                        bit_offset = 0;
-                    }
-                    // Struct: align offset to member alignment
-                    let align = mem_ty.align();
-                    offset = (offset + align - 1) & !(align - 1);
-                    members.push(StructMember {
-                        name: mem_name,
-                        ty: mem_ty.clone(),
-                        offset,
-                        bit_width: 0,
-                        bit_offset: 0,
-                    });
-                    offset += mem_ty.size();
+                    self.advance(); // skip comma
+                    // Parse next member name with same type
+                    mem_name = match &self.current().kind {
+                        TokenKind::Ident(s) => {
+                            let s = s.clone();
+                            self.advance();
+                            s
+                        }
+                        _ => break,
+                    };
+                    // Parse optional bit-field
+                    bit_width = if self.current().kind == TokenKind::Colon {
+                        self.advance();
+                        match &self.current().kind {
+                            TokenKind::Num(n) => {
+                                let w = *n as usize;
+                                self.advance();
+                                w
+                            }
+                            _ => 0,
+                        }
+                    } else {
+                        0
+                    };
                 }
+                self.expect(TokenKind::Semicolon);
             }
             self.expect(TokenKind::RBrace);
             let ty = Type {
-                kind: crate::types::TypeKind::Struct(members),
+                kind: crate::types::TypeKind::Struct(tag_name.clone(), members),
                 is_unsigned: false,
             };
             // Register tag if present
             if let Some(ref tag) = tag_name {
                 self.struct_tags.insert(tag.clone(), ty.clone());
-                // If this tag was forward-declared, update all references to it
+                // If this tag was forward-declared, update typedefs and track for resolution
                 if self.forward_declared_tags.remove(tag) {
                     self.update_typedefs_for_tag(tag, &ty);
-                    self.update_struct_members_with_struct(&ty);
+                    self.resolved_forward_tags.insert(tag.clone());
                 }
             }
             ty
@@ -649,9 +713,9 @@ impl<'a> Parser<'a> {
             match self.struct_tags.get(tag) {
                 Some(ty) => ty.clone(),
                 None => {
-                    // Forward declaration: register an empty struct/union
+                    // Forward declaration: register an empty struct with tag name
                     let ty = Type {
-                        kind: crate::types::TypeKind::Struct(Vec::new()),
+                        kind: crate::types::TypeKind::Struct(Some(tag.clone()), Vec::new()),
                         is_unsigned: false,
                     };
                     self.struct_tags.insert(tag.clone(), ty.clone());
@@ -676,88 +740,89 @@ impl<'a> Parser<'a> {
             .collect();
         for name in typedef_names {
             let ty = self.typedefs.get(&name).unwrap().clone();
-            if let Some(updated) = Self::replace_empty_struct(&ty, full_ty) {
+            if let Some(updated) = Self::replace_tagged_empty_struct(&ty, tag, full_ty) {
                 self.typedefs.insert(name, updated);
             }
         }
     }
 
-    /// Update struct members in all defined structs (both struct_tags and typedefs)
-    /// that reference a forward-declared struct.
-    fn update_struct_members_with_struct(&mut self, full_ty: &Type) {
-        // Update struct_tags
-        let keys: Vec<String> = self.struct_tags.keys().cloned().collect();
-        for key in keys {
-            let st = self.struct_tags.get(&key).unwrap().clone();
-            if let Some(updated) = Self::update_struct_type_members(&st, full_ty) {
-                self.struct_tags.insert(key, updated);
-            }
-        }
-        // Update typedefs (some structs are anonymous and only in typedefs)
-        let keys: Vec<String> = self.typedefs.keys().cloned().collect();
-        for key in keys {
-            let ty = self.typedefs.get(&key).unwrap().clone();
-            if let Some(updated) = Self::update_struct_type_members(&ty, full_ty) {
-                self.typedefs.insert(key, updated);
-            }
-        }
-    }
-
-    /// If the type is a struct, update its members that reference empty structs.
-    fn update_struct_type_members(ty: &Type, full_ty: &Type) -> Option<Type> {
+    /// Replace empty structs with a specific tag name with the full definition.
+    /// Only replaces structs whose tag matches the target tag.
+    fn replace_tagged_empty_struct(ty: &Type, target_tag: &str, full_ty: &Type) -> Option<Type> {
         match &ty.kind {
-            TypeKind::Struct(members) if !members.is_empty() => {
-                let mut updated_members = members.clone();
-                let mut changed = false;
-                for m in &mut updated_members {
-                    if let Some(new_ty) = Self::replace_empty_struct(&m.ty, full_ty) {
-                        m.ty = new_ty;
-                        changed = true;
-                    }
-                }
-                if changed {
-                    Some(Type {
-                        kind: TypeKind::Struct(updated_members),
-                        is_unsigned: ty.is_unsigned,
-                    })
-                } else {
-                    None
-                }
+            TypeKind::Struct(Some(tag), members) if members.is_empty() && tag == target_tag => {
+                Some(full_ty.clone())
             }
             TypeKind::Ptr(base) => {
-                Self::update_struct_type_members(base, full_ty).map(|updated| Type {
-                    kind: TypeKind::Ptr(Box::new(updated)),
-                    is_unsigned: ty.is_unsigned,
-                })
-            }
-            _ => None,
-        }
-    }
-
-    /// Recursively replace empty structs in a type tree with the full struct definition.
-    fn replace_empty_struct(ty: &Type, full_ty: &Type) -> Option<Type> {
-        match &ty.kind {
-            TypeKind::Struct(members) if members.is_empty() => {
-                if let TypeKind::Struct(full_members) = &full_ty.kind {
-                    if !full_members.is_empty() {
-                        return Some(full_ty.clone());
-                    }
-                }
-                None
-            }
-            TypeKind::Ptr(base) => {
-                Self::replace_empty_struct(base, full_ty).map(|updated| Type {
+                Self::replace_tagged_empty_struct(base, target_tag, full_ty).map(|updated| Type {
                     kind: TypeKind::Ptr(Box::new(updated)),
                     is_unsigned: ty.is_unsigned,
                 })
             }
             TypeKind::Array(base, size) => {
-                Self::replace_empty_struct(base, full_ty).map(|updated| Type {
+                Self::replace_tagged_empty_struct(base, target_tag, full_ty).map(|updated| Type {
                     kind: TypeKind::Array(Box::new(updated), *size),
                     is_unsigned: ty.is_unsigned,
                 })
             }
             _ => None,
+        }
+    }
+
+    /// Resolve all remaining forward-declared struct references.
+    /// Called at the end of parsing to ensure all types are fully resolved.
+    /// Only processes tags that were actually forward-declared and later defined.
+    fn resolve_forward_refs(&mut self) {
+        // Only process tags that were forward-declared then defined
+        let resolved_tags: Vec<String> = self.resolved_forward_tags.iter().cloned().collect();
+
+        for tag in &resolved_tags {
+            let full_ty = match self.struct_tags.get(tag) {
+                Some(ty) => ty.clone(),
+                None => continue,
+            };
+            if let TypeKind::Struct(_, members) = &full_ty.kind {
+                if members.is_empty() {
+                    continue; // still empty, skip
+                }
+            }
+
+            // Update struct_tags members that reference this tag
+            let keys: Vec<String> = self.struct_tags.keys().cloned().collect();
+            for key in &keys {
+                if *key == *tag {
+                    continue; // skip self-referential
+                }
+                let st = self.struct_tags.get(key).unwrap().clone();
+                if let TypeKind::Struct(st_tag, members) = &st.kind {
+                    if members.is_empty() {
+                        continue;
+                    }
+                    let mut updated_members = members.clone();
+                    let mut changed = false;
+                    for m in &mut updated_members {
+                        if let Some(new_ty) = Self::replace_tagged_empty_struct(&m.ty, tag, &full_ty) {
+                            m.ty = new_ty;
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        self.struct_tags.insert(key.clone(), Type {
+                            kind: TypeKind::Struct(st_tag.clone(), updated_members),
+                            is_unsigned: st.is_unsigned,
+                        });
+                    }
+                }
+            }
+
+            // Update typedefs that reference this tag
+            let keys: Vec<String> = self.typedefs.keys().cloned().collect();
+            for key in &keys {
+                let ty = self.typedefs.get(key).unwrap().clone();
+                if let Some(updated) = Self::replace_tagged_empty_struct(&ty, tag, &full_ty) {
+                    self.typedefs.insert(key.clone(), updated);
+                }
+            }
         }
     }
 
@@ -1715,7 +1780,7 @@ impl<'a> Parser<'a> {
                 // Supports designated initializers: .member = val, [idx] = val
                 self.advance();
 
-                if let crate::types::TypeKind::Struct(ref members) = ty.kind {
+                if let crate::types::TypeKind::Struct(_, ref members) = ty.kind {
                     // Struct initializer with optional designators
                     let members_list = members.clone();
                     let unique = self.declare_var(&name, ty.clone());
@@ -2025,7 +2090,7 @@ impl<'a> Parser<'a> {
                     let val = self.eval_const_expr();
                     // Determine field size from struct type or use int (4 bytes)
                     let field_size = match &ty.kind {
-                        crate::types::TypeKind::Struct(members) => {
+                        crate::types::TypeKind::Struct(_, members) => {
                             if let Some(m) = members.iter().find(|m| m.offset == offset) {
                                 m.ty.size()
                             } else {
@@ -2041,7 +2106,7 @@ impl<'a> Parser<'a> {
                     }
                     offset += field_size;
                     // Align to next field
-                    if let crate::types::TypeKind::Struct(members) = &ty.kind {
+                    if let crate::types::TypeKind::Struct(_, members) = &ty.kind {
                         if let Some(m) = members.iter().find(|m| m.offset >= offset) {
                             offset = m.offset;
                         }
@@ -2724,7 +2789,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.expect(TokenKind::RParen);
                     // Find offset in struct
-                    if let crate::types::TypeKind::Struct(members) = &ty.kind {
+                    if let crate::types::TypeKind::Struct(_, members) = &ty.kind {
                         for m in members {
                             if m.name == member_name {
                                 return Expr::Num(m.offset as i64);
@@ -2884,7 +2949,7 @@ impl<'a> Parser<'a> {
         self.unique_counter += 1;
         let anon_name = format!("__compound_{}", self.unique_counter);
 
-        if let crate::types::TypeKind::Struct(ref members) = ty.kind {
+        if let crate::types::TypeKind::Struct(_, ref members) = ty.kind {
             // Struct compound literal
             let members_list = members.clone();
             let unique = self.declare_var(&anon_name, ty.clone());

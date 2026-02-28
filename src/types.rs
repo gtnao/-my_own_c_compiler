@@ -24,7 +24,7 @@ pub enum TypeKind {
     Double,
     Ptr(Box<Type>),
     Array(Box<Type>, usize),
-    Struct(Vec<StructMember>),
+    Struct(Option<String>, Vec<StructMember>),
 }
 
 /// Type representation with signedness.
@@ -89,7 +89,7 @@ impl Type {
             TypeKind::Double => 8,
             TypeKind::Ptr(_) => 8,
             TypeKind::Array(base, len) => base.size() * len,
-            TypeKind::Struct(members) => {
+            TypeKind::Struct(_, members) => {
                 if members.is_empty() {
                     return 0;
                 }
@@ -118,7 +118,7 @@ impl Type {
             TypeKind::Double => 8,
             TypeKind::Ptr(_) => 8,
             TypeKind::Array(base, _) => base.align(),
-            TypeKind::Struct(members) => {
+            TypeKind::Struct(_, members) => {
                 members.iter().map(|m| m.ty.align()).max().unwrap_or(1)
             }
         }

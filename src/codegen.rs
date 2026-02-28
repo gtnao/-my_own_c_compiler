@@ -19,6 +19,7 @@ pub struct Codegen {
     va_save_area_offset: usize,
     current_func_param_count: usize,
     filename: String,
+    struct_defs: HashMap<String, Type>,
 }
 
 impl Codegen {
@@ -40,6 +41,7 @@ impl Codegen {
             va_save_area_offset: 0,
             current_func_param_count: 0,
             filename: filename.to_string(),
+            struct_defs: HashMap::new(),
         }
     }
 
@@ -52,6 +54,9 @@ impl Codegen {
     pub fn generate(&mut self, program: &Program) -> String {
         // Emit debug file directive
         self.emit(&format!("  .file \"{}\"", self.filename));
+
+        // Store struct definitions for resolving forward-declared types
+        self.struct_defs = program.struct_defs.clone();
 
         // Register global variable names and types
         for (ty, name, _) in &program.globals {
@@ -216,7 +221,7 @@ impl Codegen {
                 TypeKind::Double => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
-                TypeKind::Struct(_) => {
+                TypeKind::Struct(..) => {
                     // Struct pass-by-value: register holds pointer to caller's struct,
                     // copy the struct data into local stack space
                     let size = ty.size();
@@ -450,7 +455,7 @@ impl Codegen {
             }
             Expr::Assign { lhs, rhs } => {
                 let lhs_ty = self.expr_type(lhs);
-                if let TypeKind::Struct(_) = &lhs_ty.kind {
+                if let TypeKind::Struct(..) = &lhs_ty.kind {
                     // Struct assignment: get addresses of both sides and memcpy
                     self.gen_addr(rhs);
                     self.push(); // save rhs address
@@ -464,8 +469,8 @@ impl Codegen {
                 } else {
                     // Check for bit-field assignment
                     let bf_info = if let Expr::Member(base, name) = lhs.as_ref() {
-                        let base_ty = self.expr_type(base);
-                        if let TypeKind::Struct(members) = &base_ty.kind {
+                        let base_ty = self.resolve_struct_type(&self.expr_type(base));
+                        if let TypeKind::Struct(_, members) = &base_ty.kind {
                             members.iter().find(|m| m.name == *name)
                                 .filter(|m| m.bit_width > 0)
                                 .map(|m| (m.bit_width, m.bit_offset))
@@ -545,7 +550,7 @@ impl Codegen {
             Expr::Deref(inner) => {
                 self.gen_expr(inner);
                 let ty = self.expr_type(expr);
-                if let TypeKind::Struct(_) = &ty.kind {
+                if let TypeKind::Struct(..) = &ty.kind {
                     // Struct deref: leave address in %rax
                 } else {
                     self.emit_load_indirect(&ty);
@@ -715,8 +720,8 @@ impl Codegen {
             }
             Expr::Member(base, name) => {
                 // Check if this is a bit-field member
-                let base_ty = self.expr_type(base);
-                let bf_info = if let TypeKind::Struct(members) = &base_ty.kind {
+                let base_ty = self.resolve_struct_type(&self.expr_type(base));
+                let bf_info = if let TypeKind::Struct(_, members) = &base_ty.kind {
                     members.iter().find(|m| m.name == *name)
                         .filter(|m| m.bit_width > 0)
                         .map(|m| (m.bit_width, m.bit_offset))
@@ -726,7 +731,7 @@ impl Codegen {
 
                 self.gen_addr(expr);
                 let ty = self.expr_type(expr);
-                if let TypeKind::Struct(_) = &ty.kind {
+                if let TypeKind::Struct(..) = &ty.kind {
                     // Struct member: leave address in %rax (like array decay)
                 } else if let Some((bit_width, bit_off)) = bf_info {
                     // Bit-field: load storage unit, extract bits
@@ -784,7 +789,7 @@ impl Codegen {
                         TypeKind::Short => self.emit("  movswq %ax, %rax"),
                         TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
                         TypeKind::Int => self.emit("  movslq %eax, %rax"),
-                        TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Float | TypeKind::Double => {}
+                        TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) | TypeKind::Struct(..) | TypeKind::Float | TypeKind::Double => {}
                     }
                 }
             }
@@ -992,8 +997,8 @@ impl Codegen {
             }
             Expr::Member(base, name) => {
                 self.gen_addr(base);
-                let base_ty = self.expr_type(base);
-                if let TypeKind::Struct(members) = &base_ty.kind {
+                let base_ty = self.resolve_struct_type(&self.expr_type(base));
+                if let TypeKind::Struct(_, members) = &base_ty.kind {
                     let member = members.iter().find(|m| m.name == *name).unwrap();
                     if member.offset > 0 {
                         self.emit(&format!("  add ${}, %rax", member.offset));
@@ -1027,8 +1032,8 @@ impl Codegen {
             }
             Expr::StrLit(_) => Type::ptr_to(Type::char_type()),
             Expr::Member(base, name) => {
-                let base_ty = self.expr_type(base);
-                if let TypeKind::Struct(members) = &base_ty.kind {
+                let base_ty = self.resolve_struct_type(&self.expr_type(base));
+                if let TypeKind::Struct(_, members) = &base_ty.kind {
                     members.iter().find(|m| m.name == *name)
                         .map(|m| m.ty.clone())
                         .unwrap_or(Type::int_type())
@@ -1163,7 +1168,7 @@ impl Codegen {
     /// Store %rax to the address in %rdi, based on the given type.
     /// For float/double, stores from %xmm0.
     fn emit_store_indirect(&mut self, ty: &Type) {
-        if let TypeKind::Struct(_) = &ty.kind {
+        if let TypeKind::Struct(..) = &ty.kind {
             self.emit("  mov %rax, %rsi"); // src
             let size = ty.size();
             self.emit(&format!("  mov ${}, %rcx", size));
@@ -1230,7 +1235,7 @@ impl Codegen {
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov {}(%rip), %rax", name)),
                 TypeKind::Float => self.emit(&format!("  movss {}(%rip), %xmm0", name)),
                 TypeKind::Double => self.emit(&format!("  movsd {}(%rip), %xmm0", name)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) => {
+                TypeKind::Array(_, _) | TypeKind::Struct(..) => {
                     self.emit(&format!("  lea {}(%rip), %rax", name));
                 }
                 TypeKind::Void => {}
@@ -1248,7 +1253,7 @@ impl Codegen {
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
                 TypeKind::Float => self.emit(&format!("  movss -{}(%rbp), %xmm0", offset)),
                 TypeKind::Double => self.emit(&format!("  movsd -{}(%rbp), %xmm0", offset)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) => {
+                TypeKind::Array(_, _) | TypeKind::Struct(..) => {
                     self.emit(&format!("  lea -{}(%rbp), %rax", offset));
                 }
                 TypeKind::Void => {}
@@ -1259,7 +1264,7 @@ impl Codegen {
     fn emit_store_var(&mut self, name: &str) {
         let ty = self.get_var_type(name);
         // Struct copy: %rax = source address, copy to variable location
-        if let TypeKind::Struct(_) = &ty.kind {
+        if let TypeKind::Struct(..) = &ty.kind {
             let size = ty.size();
             self.emit("  mov %rax, %rsi"); // src address
             if self.globals.contains(name) {
@@ -1301,7 +1306,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, {}(%rip)", name)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(..) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         } else {
             let offset = self.locals[name];
@@ -1310,7 +1315,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(..) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         }
     }
@@ -1327,7 +1332,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(..) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         } else {
             let offset = self.locals[name];
@@ -1336,9 +1341,21 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(..) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         }
+    }
+
+    /// Resolve a struct type: if it has empty members and a tag, look up the full definition.
+    fn resolve_struct_type(&self, ty: &Type) -> Type {
+        if let TypeKind::Struct(Some(tag), members) = &ty.kind {
+            if members.is_empty() {
+                if let Some(full_ty) = self.struct_defs.get(tag) {
+                    return full_ty.clone();
+                }
+            }
+        }
+        ty.clone()
     }
 
     fn push(&mut self) {
