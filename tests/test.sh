@@ -613,6 +613,11 @@ assert 12 'int map_sum(int *a, int n, int (*f)(int)) { int s = 0; int i; for (i 
 assert 100 'int main() { int i = 100; for (int i = 0; i < 5; i++) {} return i; }'
 assert 45 'int main() { int s = 0; for (int i = 0; i < 10; i++) s += i; return s; }'
 
+# Step 12.8: Multiple variable declarations
+assert 3 'int main() { int a = 1, b = 2; return a + b; }'
+assert 6 'int main() { int a = 1, b = 2, c = 3; return a + b + c; }'
+assert 3 'int main() { int a, b; a = 1; b = 2; return a + b; }'
+
 # Step 12.4-12.5: const and volatile qualifiers
 assert 42 'int main() { const int a = 42; return a; }'
 assert 3 'int main() { const int *p; int a = 3; p = &a; return *p; }'

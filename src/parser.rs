@@ -1183,13 +1183,88 @@ impl<'a> Parser<'a> {
             } else {
                 // Normal initializer
                 let unique = self.declare_var(&name, ty.clone());
-                let init = Some(self.expr());
+                let init = Some(self.assign());
+
+                // Check for multi-variable declaration: int a=1, b=2;
+                if self.current().kind == TokenKind::Comma {
+                    let mut stmts = vec![Stmt::VarDecl { name: unique, ty: ty.clone(), init }];
+                    while self.current().kind == TokenKind::Comma {
+                        self.advance();
+                        // Parse pointer stars for this declarator
+                        let mut decl_ty = ty.clone();
+                        while self.current().kind == TokenKind::Star {
+                            self.advance();
+                            while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+                                self.advance();
+                            }
+                            decl_ty = Type::ptr_to(decl_ty);
+                        }
+                        let next_name = match &self.current().kind {
+                            TokenKind::Ident(s) => s.clone(),
+                            _ => {
+                                self.reporter.error_at(
+                                    self.current().pos,
+                                    "expected variable name",
+                                );
+                            }
+                        };
+                        self.advance();
+                        let next_init = if self.current().kind == TokenKind::Eq {
+                            self.advance();
+                            Some(self.assign())
+                        } else {
+                            None
+                        };
+                        let next_unique = self.declare_var(&next_name, decl_ty.clone());
+                        stmts.push(Stmt::VarDecl { name: next_unique, ty: decl_ty, init: next_init });
+                    }
+                    self.expect(TokenKind::Semicolon);
+                    return Stmt::Block(stmts);
+                }
+
                 self.expect(TokenKind::Semicolon);
                 return Stmt::VarDecl { name: unique, ty, init };
             }
         }
 
         let unique = self.declare_var(&name, ty.clone());
+
+        // Check for multi-variable declaration without initializer: int a, b;
+        if self.current().kind == TokenKind::Comma {
+            let mut stmts = vec![Stmt::VarDecl { name: unique, ty: ty.clone(), init: None }];
+            while self.current().kind == TokenKind::Comma {
+                self.advance();
+                let mut decl_ty = ty.clone();
+                while self.current().kind == TokenKind::Star {
+                    self.advance();
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
+                        self.advance();
+                    }
+                    decl_ty = Type::ptr_to(decl_ty);
+                }
+                let next_name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected variable name",
+                        );
+                    }
+                };
+                self.advance();
+                let next_init = if self.current().kind == TokenKind::Eq {
+                    self.advance();
+                    Some(self.assign())
+                } else {
+                    None
+                };
+                let next_unique = self.declare_var(&next_name, decl_ty.clone());
+                stmts.push(Stmt::VarDecl { name: next_unique, ty: decl_ty, init: next_init });
+            }
+            self.expect(TokenKind::Semicolon);
+            return Stmt::Block(stmts);
+        }
+
         self.expect(TokenKind::Semicolon);
         Stmt::VarDecl { name: unique, ty, init: None }
     }
