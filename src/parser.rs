@@ -75,6 +75,15 @@ impl Parser {
                         rhs: Box::new(rhs),
                     };
                 }
+                TokenKind::Percent => {
+                    self.advance();
+                    let rhs = self.unary();
+                    node = Expr::BinOp {
+                        op: BinOp::Mod,
+                        lhs: Box::new(node),
+                        rhs: Box::new(rhs),
+                    };
+                }
                 _ => break,
             }
         }

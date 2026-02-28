@@ -40,6 +40,7 @@ impl Lexer {
                 '-' => TokenKind::Minus,
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
+                '%' => TokenKind::Percent,
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
                 _ => {

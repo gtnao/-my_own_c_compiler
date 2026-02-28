@@ -57,10 +57,14 @@ impl Codegen {
                         self.emit("  imul %rdi, %rax");
                     }
                     BinOp::Div => {
-                        // idiv divides rdx:rax by the operand
-                        // cqto sign-extends rax into rdx
                         self.emit("  cqto");
                         self.emit("  idiv %rdi");
+                    }
+                    BinOp::Mod => {
+                        // idiv: quotient -> %rax, remainder -> %rdx
+                        self.emit("  cqto");
+                        self.emit("  idiv %rdi");
+                        self.emit("  mov %rdx, %rax");
                     }
                 }
             }

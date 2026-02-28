@@ -61,6 +61,13 @@ assert 3 '9/3'
 assert 20 '(2+3)*(5-1)'
 assert 3 '10/2/2+1-1+1'
 
+# Step 1.5: modulo operator
+assert 1 '10 % 3'
+assert 0 '6 % 3'
+assert 2 '11 % 3'
+assert 0 '10 % 5'
+assert 1 '7 % 2'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
