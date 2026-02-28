@@ -1027,26 +1027,36 @@ impl<'a> Parser<'a> {
                 {
                     self.advance(); // (
                     self.advance(); // *
+                    // Skip qualifiers
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                        self.advance();
+                    }
                     let param_name = match &self.current().kind {
-                        TokenKind::Ident(s) => s.clone(),
+                        TokenKind::Ident(s) => {
+                            let s = s.clone();
+                            self.advance();
+                            s
+                        }
                         _ => {
-                            self.reporter.error_at(
-                                self.current().pos,
-                                "expected function pointer parameter name",
-                            );
+                            // Anonymous function pointer parameter (abstract declarator)
+                            self.unique_counter += 1;
+                            format!("__anon_fptr.{}", self.unique_counter)
                         }
                     };
-                    self.advance();
                     self.expect(TokenKind::RParen); // )
                     // Skip parameter type list
                     self.expect(TokenKind::LParen);
                     while self.current().kind != TokenKind::RParen {
-                        if self.is_type_start(&self.current().kind.clone()) {
+                        if self.current().kind == TokenKind::Ellipsis {
+                            self.advance();
+                        } else if self.is_type_start(&self.current().kind.clone()) {
                             let _pty = self.parse_type();
                             // Skip optional parameter name
                             if let TokenKind::Ident(_) = &self.current().kind {
                                 self.advance();
                             }
+                        } else if self.current().kind == TokenKind::Void {
+                            self.advance();
                         }
                         if self.current().kind == TokenKind::Comma {
                             self.advance();
@@ -1064,7 +1074,22 @@ impl<'a> Parser<'a> {
                 }
 
                 let param_name = match &self.current().kind {
-                    TokenKind::Ident(s) => s.clone(),
+                    TokenKind::Ident(s) => {
+                        let s = s.clone();
+                        self.advance();
+                        s
+                    }
+                    // Abstract declarator: no parameter name (e.g., prototype "void foo(int, int);")
+                    TokenKind::Comma | TokenKind::RParen => {
+                        self.unique_counter += 1;
+                        format!("__anon_param.{}", self.unique_counter)
+                    }
+                    // Pointer to pointer or other modifier
+                    TokenKind::Star => {
+                        // Already consumed by parse_type, generate anonymous name
+                        self.unique_counter += 1;
+                        format!("__anon_param.{}", self.unique_counter)
+                    }
                     _ => {
                         self.reporter.error_at(
                             self.current().pos,
@@ -1072,7 +1097,6 @@ impl<'a> Parser<'a> {
                         );
                     }
                 };
-                self.advance();
                 // Array parameter: int a[] → int *a
                 if self.current().kind == TokenKind::LBracket {
                     self.advance();

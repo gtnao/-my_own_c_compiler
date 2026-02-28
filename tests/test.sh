@@ -994,6 +994,10 @@ assert 42 'int main() { struct { union { int a; long b; }; int c; } s; s.a = 42;
 assert 10 'int main() { struct { union { int a; long b; }; int c; } s; s.a = 42; s.c = 10; return s.c; }'
 assert 99 'int main() { struct { struct { int x; int y; }; int z; } s; s.x = 99; s.z = 1; return s.x; }'
 
+# Step 15.6: Abstract declarators in function prototypes
+assert 7 'int apply(int (*)(int, int), int, int); int apply(int (*f)(int, int), int a, int b) { return f(a, b); } int add(int a, int b) { return a+b; } int main() { return apply(add, 3, 4); }'
+assert 5 'int foo(int, int); int foo(int a, int b) { return a+b; } int main() { return foo(2,3); }'
+
 # Cross-header inclusion test
 assert 0 '#include <stdio.h>
 #include <stdlib.h>
