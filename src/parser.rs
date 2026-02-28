@@ -97,6 +97,15 @@ impl<'a> Parser<'a> {
                         self.advance();
                     }
                 }
+                // Skip array dimensions: extern int foo[];
+                while self.current().kind == TokenKind::LBracket {
+                    self.advance();
+                    while self.current().kind != TokenKind::RBracket && self.current().kind != TokenKind::Eof {
+                        self.advance();
+                    }
+                    if self.current().kind == TokenKind::RBracket { self.advance(); }
+                }
+                self.skip_attribute();
                 self.expect(TokenKind::Semicolon);
                 // Register type for codegen but mark as extern (no storage)
                 self.extern_names.insert(name.clone());
@@ -174,6 +183,7 @@ impl<'a> Parser<'a> {
                         0
                     };
                     self.expect(TokenKind::RBracket);
+                    self.skip_attribute();
                     self.expect(TokenKind::Semicolon);
                     let arr_ty = Type { kind: crate::types::TypeKind::Array(Box::new(ty), size), is_unsigned: false };
                     if let Some(ref tag) = self.last_struct_tag {
@@ -182,6 +192,7 @@ impl<'a> Parser<'a> {
                     self.typedefs.insert(name, arr_ty);
                     continue;
                 }
+                self.skip_attribute();
                 self.expect(TokenKind::Semicolon);
                 if let Some(ref tag) = self.last_struct_tag {
                     self.typedef_struct_tags.insert(name.clone(), tag.clone());
@@ -213,7 +224,8 @@ impl<'a> Parser<'a> {
             return true;
         }
         if let TokenKind::Ident(name) = kind {
-            return self.typedefs.contains_key(name) || name == "va_list" || name == "__builtin_va_list";
+            return self.typedefs.contains_key(name) || name == "va_list" || name == "__builtin_va_list"
+                || name == "__int128" || name == "__int128_t" || name == "__uint128_t";
         }
         false
     }
@@ -305,16 +317,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     dims.push(0);
                 } else {
-                    let len = match &self.current().kind {
-                        TokenKind::Num(n) => *n as usize,
-                        _ => {
-                            self.reporter.error_at(
-                                self.current().pos,
-                                "expected array size",
-                            );
-                        }
-                    };
-                    self.advance();
+                    let len = self.eval_const_expr() as usize;
                     self.expect(TokenKind::RBracket);
                     dims.push(len);
                 }
@@ -541,16 +544,7 @@ impl<'a> Parser<'a> {
                         self.advance();
                         Type::array_of(mem_ty, 0)
                     } else {
-                        let len = match &self.current().kind {
-                            TokenKind::Num(n) => *n as usize,
-                            _ => {
-                                self.reporter.error_at(
-                                    self.current().pos,
-                                    "expected array size",
-                                );
-                            }
-                        };
-                        self.advance();
+                        let len = self.eval_const_expr() as usize;
                         self.expect(TokenKind::RBracket);
                         Type::array_of(mem_ty, len)
                     }
@@ -912,15 +906,18 @@ impl<'a> Parser<'a> {
                 Type::int_type()
             }
             _ => {
-                if is_unsigned {
-                    // bare "unsigned" = "unsigned int"
-                    Type::uint()
-                } else if has_signedness {
-                    // bare "signed" = "signed int" = "int"
-                    Type::int_type()
-                } else if let TokenKind::Ident(name) = &self.current().kind {
-                    if name == "va_list" || name == "__builtin_va_list" {
-                        // va_list is treated as char* (pointer to register save area)
+                // Check for __int128 and similar identifier types first
+                // (even after unsigned/signed)
+                if let TokenKind::Ident(name) = &self.current().kind {
+                    if name == "__int128" || name == "__int128_t" || name == "__uint128_t" {
+                        let is_u128 = name == "__uint128_t";
+                        self.advance();
+                        if is_unsigned || is_u128 { Type::ulong() } else { Type::long_type() }
+                    } else if has_signedness {
+                        // After unsigned/signed with no base type keyword:
+                        // "unsigned" or "signed" alone = int
+                        if is_unsigned { Type::uint() } else { Type::int_type() }
+                    } else if name == "va_list" || name == "__builtin_va_list" {
                         self.advance();
                         Type::ptr_to(Type::char_type())
                     } else if let Some(ty) = self.typedefs.get(name).cloned() {
@@ -932,6 +929,10 @@ impl<'a> Parser<'a> {
                             &format!("expected type, but got {:?}", self.current().kind),
                         );
                     }
+                } else if is_unsigned {
+                    Type::uint()
+                } else if has_signedness {
+                    Type::int_type()
                 } else {
                     self.reporter.error_at(
                         self.current().pos,
@@ -1692,16 +1693,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     dims.push(0); // placeholder, will be filled from initializer
                 } else {
-                    let len = match &self.current().kind {
-                        TokenKind::Num(n) => *n as usize,
-                        _ => {
-                            self.reporter.error_at(
-                                self.current().pos,
-                                "expected array size",
-                            );
-                        }
-                    };
-                    self.advance();
+                    let len = self.eval_const_expr() as usize;
                     self.expect(TokenKind::RBracket);
                     dims.push(len);
                 }
@@ -2441,16 +2433,7 @@ impl<'a> Parser<'a> {
                             self.advance();
                             ty = Type::array_of(ty, 0); // placeholder
                         } else {
-                            let n = match &self.current().kind {
-                                TokenKind::Num(n) => *n as usize,
-                                _ => {
-                                    self.reporter.error_at(
-                                        self.current().pos,
-                                        "expected array size",
-                                    );
-                                }
-                            };
-                            self.advance();
+                            let n = self.eval_const_expr() as usize;
                             self.expect(TokenKind::RBracket);
                             ty = Type::array_of(ty, n);
                         }

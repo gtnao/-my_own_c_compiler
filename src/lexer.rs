@@ -473,35 +473,35 @@ impl<'a> Lexer<'a> {
                 // Hex literal: 0x or 0X
                 if next == b'x' || next == b'X' {
                     self.pos += 2; // skip '0x'
-                    let mut val: i64 = 0;
+                    let mut val: u64 = 0;
                     while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_hexdigit() {
-                        val = val * 16 + (self.input[self.pos] as char).to_digit(16).unwrap() as i64;
+                        val = val.wrapping_mul(16).wrapping_add((self.input[self.pos] as char).to_digit(16).unwrap() as u64);
                         self.pos += 1;
                     }
                     self.skip_int_suffix();
-                    return (false, val, 0.0);
+                    return (false, val as i64, 0.0);
                 }
                 // Binary literal: 0b or 0B
                 if next == b'b' || next == b'B' {
                     self.pos += 2; // skip '0b'
-                    let mut val: i64 = 0;
+                    let mut val: u64 = 0;
                     while self.pos < self.input.len() && (self.input[self.pos] == b'0' || self.input[self.pos] == b'1') {
-                        val = val * 2 + (self.input[self.pos] - b'0') as i64;
+                        val = val.wrapping_mul(2).wrapping_add((self.input[self.pos] - b'0') as u64);
                         self.pos += 1;
                     }
                     self.skip_int_suffix();
-                    return (false, val, 0.0);
+                    return (false, val as i64, 0.0);
                 }
                 // Octal literal: 0 followed by octal digits
                 if next >= b'0' && next <= b'7' {
                     self.pos += 1; // skip leading '0'
-                    let mut val: i64 = 0;
+                    let mut val: u64 = 0;
                     while self.pos < self.input.len() && self.input[self.pos] >= b'0' && self.input[self.pos] <= b'7' {
-                        val = val * 8 + (self.input[self.pos] - b'0') as i64;
+                        val = val.wrapping_mul(8).wrapping_add((self.input[self.pos] - b'0') as u64);
                         self.pos += 1;
                     }
                     self.skip_int_suffix();
-                    return (false, val, 0.0);
+                    return (false, val as i64, 0.0);
                 }
             }
         }
@@ -552,16 +552,19 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
 
+        // Record end of numeric part before suffixes
+        let num_end = self.pos;
+
         // Skip integer suffixes
         if !is_float {
             self.skip_int_suffix();
         }
 
-        let s = std::str::from_utf8(&self.input[start..self.pos]).unwrap();
+        let s = std::str::from_utf8(&self.input[start..num_end]).unwrap();
         if is_float {
             // Remove trailing 'f'/'F' for parsing
             let num_str = s.trim_end_matches(|c| c == 'f' || c == 'F');
-            let val: f64 = num_str.parse().unwrap();
+            let val: f64 = num_str.parse().unwrap_or(0.0);
             (true, 0, val)
         } else {
             let val: i64 = s.parse().unwrap_or(0);

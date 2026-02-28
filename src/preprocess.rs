@@ -10,6 +10,16 @@ enum MacroDef {
 
 /// Simple preprocessor that handles #include, #define directives.
 pub fn preprocess(source: &str, file_path: &str) -> String {
+    preprocess_with_options(source, file_path, &[], &[])
+}
+
+/// Preprocessor with additional include paths and predefined macros.
+pub fn preprocess_with_options(
+    source: &str,
+    file_path: &str,
+    include_paths: &[String],
+    defines: &[(String, String)],
+) -> String {
     let mut included = HashSet::new();
     included.insert(PathBuf::from(file_path).canonicalize().unwrap_or_default());
     let mut macros = HashMap::new();
@@ -55,7 +65,12 @@ pub fn preprocess(source: &str, file_path: &str) -> String {
     macros.insert("__SHRT_MAX__".to_string(), MacroDef::Object("32767".to_string()));
     macros.insert("__SCHAR_MAX__".to_string(), MacroDef::Object("127".to_string()));
     macros.insert("NULL".to_string(), MacroDef::Object("((void *)0)".to_string()));
-    preprocess_recursive(source, file_path, &mut included, &mut macros)
+    // Add user-defined macros from -D flags
+    for (name, value) in defines {
+        macros.insert(name.clone(), MacroDef::Object(value.clone()));
+    }
+    let include_paths: Vec<PathBuf> = include_paths.iter().map(PathBuf::from).collect();
+    preprocess_recursive(source, file_path, &mut included, &mut macros, &include_paths)
 }
 
 /// Join backslash-continuation lines before processing.
@@ -74,84 +89,174 @@ fn join_continuation_lines(source: &str) -> String {
     result
 }
 
+/// Strip C-style comments (/* ... */ and // ...) from source,
+/// preserving newlines inside block comments to maintain line numbers.
+fn strip_comments(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut result = String::with_capacity(source.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            // Block comment: skip until */
+            i += 2;
+            while i + 1 < bytes.len() {
+                if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                    i += 2;
+                    break;
+                }
+                if bytes[i] == b'\n' {
+                    result.push('\n');
+                }
+                i += 1;
+            }
+        } else if bytes[i] == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            // Line comment: skip until end of line
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+        } else if bytes[i] == b'"' {
+            // String literal: copy verbatim
+            result.push('"');
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'"' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    result.push(bytes[i] as char);
+                    i += 1;
+                }
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            if i < bytes.len() {
+                result.push('"');
+                i += 1;
+            }
+        } else if bytes[i] == b'\'' {
+            // Char literal: copy verbatim
+            result.push('\'');
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'\'' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    result.push(bytes[i] as char);
+                    i += 1;
+                }
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            if i < bytes.len() {
+                result.push('\'');
+                i += 1;
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
 fn preprocess_recursive(
     source: &str,
     file_path: &str,
     included: &mut HashSet<PathBuf>,
     macros: &mut HashMap<String, MacroDef>,
+    include_paths: &[PathBuf],
 ) -> String {
     let source = join_continuation_lines(source);
+    let source = strip_comments(&source);
     let dir = Path::new(file_path).parent().unwrap_or(Path::new("."));
     let mut result = String::new();
-    // Conditional compilation stack: true = active, false = skipped
-    let mut cond_stack: Vec<bool> = Vec::new();
+    // Conditional compilation stack: (active, any_branch_taken)
+    // active: whether current region is being processed
+    // any_branch_taken: whether any branch in this if/elif/else chain was taken
+    let mut cond_stack: Vec<(bool, bool)> = Vec::new();
 
     for (line_no, line) in source.lines().enumerate() {
         let trimmed = line.trim();
 
+        // Normalize preprocessor directives: strip # and leading spaces
+        // to handle "# define", "#  ifdef", etc. (C standard allows spaces after #)
+        let directive = if trimmed.starts_with('#') {
+            let after_hash = trimmed[1..].trim_start();
+            Some(after_hash)
+        } else {
+            None
+        };
+
+        let parent_active = cond_stack.last().map_or(true, |&(a, _)| a);
+
         // Handle conditional compilation directives (even in skipped regions)
-        if trimmed.starts_with("#ifdef") {
-            let name = trimmed["#ifdef".len()..].trim();
-            let active = cond_stack.last().copied().unwrap_or(true) && macros.contains_key(name);
-            cond_stack.push(active);
-            continue;
-        }
-        if trimmed.starts_with("#ifndef") {
-            let name = trimmed["#ifndef".len()..].trim();
-            let active = cond_stack.last().copied().unwrap_or(true) && !macros.contains_key(name);
-            cond_stack.push(active);
-            continue;
-        }
-        if trimmed.starts_with("#if ") {
-            let cond_str = trimmed["#if".len()..].trim();
-            // Simple: evaluate as "0" or non-zero
-            let val = evaluate_simple_cond(cond_str, macros);
-            let active = cond_stack.last().copied().unwrap_or(true) && val;
-            cond_stack.push(active);
-            continue;
-        }
-        if trimmed.starts_with("#elif") {
-            let cond_str = trimmed["#elif".len()..].trim();
-            let len = cond_stack.len();
-            if len > 0 {
-                let current = cond_stack[len - 1];
-                if current {
-                    // Previous branch was taken, skip this one
-                    cond_stack[len - 1] = false;
-                } else {
-                    let parent_active = if len > 1 { cond_stack[len - 2] } else { true };
-                    let val = evaluate_simple_cond(cond_str, macros);
-                    cond_stack[len - 1] = parent_active && val;
+        if let Some(d) = directive {
+            if d.starts_with("ifdef") && (d.len() == 5 || !d.as_bytes()[5].is_ascii_alphanumeric()) {
+                let name = d["ifdef".len()..].trim();
+                let active = parent_active && macros.contains_key(name);
+                cond_stack.push((active, active));
+                continue;
+            }
+            if d.starts_with("ifndef") && (d.len() == 6 || !d.as_bytes()[6].is_ascii_alphanumeric()) {
+                let name = d["ifndef".len()..].trim();
+                let active = parent_active && !macros.contains_key(name);
+                cond_stack.push((active, active));
+                continue;
+            }
+            if d.starts_with("if ") || d.starts_with("if\t") {
+                let cond_str = d["if".len()..].trim();
+                let val = evaluate_simple_cond(cond_str, macros);
+                let active = parent_active && val;
+                cond_stack.push((active, active));
+                continue;
+            }
+            if d.starts_with("elif") && (d.len() == 4 || !d.as_bytes()[4].is_ascii_alphanumeric()) {
+                let cond_str = d["elif".len()..].trim();
+                let len = cond_stack.len();
+                if len > 0 {
+                    let (_current, any_taken) = cond_stack[len - 1];
+                    let pp = if len > 1 { cond_stack[len - 2].0 } else { true };
+                    if any_taken {
+                        // A previous branch was already taken; skip this one
+                        cond_stack[len - 1] = (false, true);
+                    } else {
+                        let val = evaluate_simple_cond(cond_str, macros);
+                        let active = pp && val;
+                        cond_stack[len - 1] = (active, active);
+                    }
                 }
+                continue;
             }
-            continue;
-        }
-        if trimmed == "#else" {
-            let len = cond_stack.len();
-            if len > 0 {
-                let current = cond_stack[len - 1];
-                let parent_active = if len > 1 { cond_stack[len - 2] } else { true };
-                cond_stack[len - 1] = parent_active && !current;
+            if d == "else" || d.starts_with("else ") || d.starts_with("else\t") {
+                let len = cond_stack.len();
+                if len > 0 {
+                    let (_current, any_taken) = cond_stack[len - 1];
+                    let pp = if len > 1 { cond_stack[len - 2].0 } else { true };
+                    if any_taken {
+                        // A previous branch was taken; #else is inactive
+                        cond_stack[len - 1] = (false, true);
+                    } else {
+                        // No branch taken yet; #else is active
+                        cond_stack[len - 1] = (pp, true);
+                    }
+                }
+                continue;
             }
-            continue;
-        }
-        if trimmed == "#endif" {
-            cond_stack.pop();
-            continue;
+            if d == "endif" || d.starts_with("endif") {
+                cond_stack.pop();
+                continue;
+            }
         }
 
         // Skip lines in inactive conditional regions
-        if cond_stack.last().copied().unwrap_or(true) == false {
+        if cond_stack.last().map_or(true, |&(a, _)| a) == false {
             continue;
         }
 
-        if trimmed.starts_with("#include_next") || trimmed.starts_with("#include") {
-            let directive_len = if trimmed.starts_with("#include_next") {
-                "#include_next".len()
-            } else {
-                "#include".len()
-            };
-            let rest = trimmed[directive_len..].trim();
+        if let Some(d) = directive {
+            if d.starts_with("include_next") || d.starts_with("include") {
+                let directive_len = if d.starts_with("include_next") {
+                    "include_next".len()
+                } else {
+                    "include".len()
+                };
+                let rest = d[directive_len..].trim();
             let (include_path, is_system) = if rest.starts_with('"') {
                 let end = rest[1..].find('"').map(|i| i + 1);
                 if let Some(end) = end {
@@ -194,11 +299,16 @@ fn preprocess_recursive(
             }
             // Check the working directory's include/ as well
             search_paths.push(PathBuf::from("include"));
+            // User-specified include paths (-I flags)
+            for ip in include_paths {
+                search_paths.push(ip.clone());
+            }
             // System include paths for real system headers
             if is_system {
                 search_paths.push(dir.to_path_buf());
                 search_paths.push(PathBuf::from("/usr/include"));
                 search_paths.push(PathBuf::from("/usr/local/include"));
+                search_paths.push(PathBuf::from("/usr/include/x86_64-linux-gnu"));
             }
 
             let mut found = false;
@@ -218,6 +328,7 @@ fn preprocess_recursive(
                             resolved.to_str().unwrap_or(&include_path),
                             included,
                             macros,
+                            include_paths,
                         );
                         result.push_str(&processed);
                         result.push('\n');
@@ -229,10 +340,9 @@ fn preprocess_recursive(
             if !found {
                 // Silently ignore missing headers
             }
-        } else if trimmed.starts_with("#define") {
-            let rest = trimmed["#define".len()..].trim();
+        } else if d.starts_with("define") && (d.len() == 6 || !d.as_bytes()[6].is_ascii_alphanumeric()) {
+            let rest = d["define".len()..].trim();
             // Check for function-like macro: NAME(params) body
-            // NAME must be immediately followed by '(' (no space)
             let name_end = rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(rest.len());
             let name = &rest[..name_end];
             let after_name = &rest[name_end..];
@@ -245,34 +355,35 @@ fn preprocess_recursive(
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect();
-                // Check for variadic: last param is "..."
                 let is_variadic = params.last().map_or(false, |p| p == "...");
                 if is_variadic {
-                    params.pop(); // remove "..."
+                    params.pop();
                 }
                 let body = after_name[paren_end + 1..].trim().to_string();
                 macros.insert(name.to_string(), MacroDef::Function(params, body, is_variadic));
             } else {
-                // Object-like macro: #define NAME value
                 let value = after_name.trim().to_string();
                 macros.insert(name.to_string(), MacroDef::Object(value));
             }
-        } else if trimmed.starts_with("#undef") {
-            let name = trimmed["#undef".len()..].trim();
+        } else if d.starts_with("undef") && (d.len() == 5 || !d.as_bytes()[5].is_ascii_alphanumeric()) {
+            let name = d["undef".len()..].trim();
             macros.remove(name);
-        } else if trimmed.starts_with("#error") {
-            let msg = trimmed["#error".len()..].trim();
+        } else if d.starts_with("error") && !d.starts_with("errno") {
+            let msg = d["error".len()..].trim();
             eprintln!("{}:{}: error: {}", file_path, line_no + 1, msg);
             std::process::exit(1);
-        } else if trimmed.starts_with("#warning") {
-            let msg = trimmed["#warning".len()..].trim();
+        } else if d.starts_with("warning") {
+            let msg = d["warning".len()..].trim();
             eprintln!("{}:{}: warning: {}", file_path, line_no + 1, msg);
-        } else if trimmed.starts_with("#line") {
-            // #line N — ignored (informational only)
-        } else if trimmed.starts_with("#pragma") {
+        } else if d.starts_with("line") {
+            // #line N — ignored
+        } else if d.starts_with("pragma") {
             // #pragma — ignored
         } else {
-            // Replace predefined macros before general macro expansion
+            // Unknown directive — skip
+        }
+        } else {
+            // Non-directive line: expand macros
             let with_predefined = replace_predefined(line, file_path, line_no + 1);
             let expanded = expand_macros(&with_predefined, macros);
             result.push_str(&expanded);

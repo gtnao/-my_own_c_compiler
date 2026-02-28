@@ -1017,6 +1017,43 @@ assert 0 '#include <stdio.h>
 #include <string.h>
 int main() { char *s = malloc(10); strcpy(s, "test"); int r = strcmp(s, "test"); free(s); return r; }'
 
+# Phase 20: PostgreSQL integration
+# Step 20.1: -I and -D flag support
+
+# Test -D flag
+assert_compile_flags() {
+  expected="$1"
+  flags="$2"
+  input="$3"
+
+  echo "$input" > "$TMPDIR/tmp.c"
+  $COMPILER $flags "$TMPDIR/tmp.c" > "$TMPDIR/tmp.s"
+  gcc -o "$TMPDIR/tmp" "$TMPDIR/tmp.s"
+  "$TMPDIR/tmp"
+  actual="$?"
+
+  if [ "$actual" = "$expected" ]; then
+    echo "OK: flags='$flags' '$input' => $actual"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: flags='$flags' '$input' => $actual (expected $expected)"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# -D define flag tests
+assert_compile_flags 42 "-DVAL=42" 'int main() { return VAL; }'
+assert_compile_flags 1 "-DFLAG" 'int main() { return FLAG; }'
+assert_compile_flags 10 "-DA=3 -DB=7" 'int main() { return A+B; }'
+
+# -I include path tests
+mkdir -p "$TMPDIR/myinc"
+echo 'int get_value() { return 99; }' > "$TMPDIR/myinc/myheader.h"
+assert_compile_flags 99 "-I$TMPDIR/myinc" '#include "myheader.h"
+int main() { return get_value(); }'
+assert_compile_flags 99 "-I $TMPDIR/myinc" '#include "myheader.h"
+int main() { return get_value(); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

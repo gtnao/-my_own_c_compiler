@@ -16,7 +16,7 @@ use crate::codegen::Codegen;
 use crate::error::ErrorReporter;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::preprocess::preprocess;
+use crate::preprocess::preprocess_with_options;
 
 enum OutputMode {
     Preprocess, // -E: preprocess only
@@ -31,6 +31,8 @@ fn main() {
     let mut mode = OutputMode::Executable;
     let mut output_file: Option<String> = None;
     let mut input_files: Vec<String> = Vec::new();
+    let mut include_paths: Vec<String> = Vec::new();
+    let mut defines: Vec<(String, String)> = Vec::new();
 
     let mut i = 1;
     while i < args.len() {
@@ -45,6 +47,38 @@ fn main() {
                 } else {
                     eprintln!("error: -o requires an argument");
                     process::exit(1);
+                }
+            }
+            "-I" => {
+                // -I <dir>
+                i += 1;
+                if i < args.len() {
+                    include_paths.push(args[i].clone());
+                }
+            }
+            arg if arg.starts_with("-I") => {
+                // -I<dir> (no space)
+                include_paths.push(arg[2..].to_string());
+            }
+            "-D" => {
+                // -D <name>=<value> or -D <name>
+                i += 1;
+                if i < args.len() {
+                    let def = &args[i];
+                    if let Some(eq) = def.find('=') {
+                        defines.push((def[..eq].to_string(), def[eq+1..].to_string()));
+                    } else {
+                        defines.push((def.clone(), "1".to_string()));
+                    }
+                }
+            }
+            arg if arg.starts_with("-D") => {
+                // -D<name>=<value> or -D<name> (no space)
+                let def = &arg[2..];
+                if let Some(eq) = def.find('=') {
+                    defines.push((def[..eq].to_string(), def[eq+1..].to_string()));
+                } else {
+                    defines.push((def.to_string(), "1".to_string()));
                 }
             }
             arg if arg.starts_with('-') => {
@@ -71,7 +105,7 @@ fn main() {
         OutputMode::Preprocess => {
             for filename in &input_files {
                 let input = read_file(filename);
-                let preprocessed = preprocess(&input, filename);
+                let preprocessed = preprocess_with_options(&input, filename, &include_paths, &defines);
                 if let Some(ref out) = output_file {
                     fs::write(out, &preprocessed).unwrap_or_else(|err| {
                         eprintln!("Failed to write '{}': {}", out, err);
@@ -84,7 +118,7 @@ fn main() {
         }
         OutputMode::Assembly => {
             for filename in &input_files {
-                let asm = compile_to_assembly(filename);
+                let asm = compile_to_assembly(filename, &include_paths, &defines);
                 let out = output_file.clone().unwrap_or_else(|| {
                     filename.replace(".c", ".s")
                 });
@@ -96,7 +130,7 @@ fn main() {
         }
         OutputMode::Object => {
             for filename in &input_files {
-                let asm = compile_to_assembly(filename);
+                let asm = compile_to_assembly(filename, &include_paths, &defines);
                 let asm_file = format!("/tmp/mycc_{}.s", std::process::id());
                 fs::write(&asm_file, &asm).unwrap_or_else(|err| {
                     eprintln!("Failed to write temp file: {}", err);
@@ -121,13 +155,13 @@ fn main() {
         OutputMode::Executable => {
             if input_files.len() == 1 && output_file.is_none() {
                 // Legacy mode: single file, output to stdout
-                let asm = compile_to_assembly(&input_files[0]);
+                let asm = compile_to_assembly(&input_files[0], &include_paths, &defines);
                 print!("{}", asm);
             } else {
                 // Multi-file: compile each to .o, then link
                 let mut obj_files = Vec::new();
                 for filename in &input_files {
-                    let asm = compile_to_assembly(filename);
+                    let asm = compile_to_assembly(filename, &include_paths, &defines);
                     let asm_file = format!("/tmp/mycc_{}_{}.s", std::process::id(), obj_files.len());
                     fs::write(&asm_file, &asm).unwrap_or_else(|err| {
                         eprintln!("Failed to write temp file: {}", err);
@@ -176,9 +210,9 @@ fn read_file(filename: &str) -> String {
     })
 }
 
-fn compile_to_assembly(filename: &str) -> String {
+fn compile_to_assembly(filename: &str, include_paths: &[String], defines: &[(String, String)]) -> String {
     let input = read_file(filename);
-    let preprocessed = preprocess(&input, filename);
+    let preprocessed = preprocess_with_options(&input, filename, include_paths, defines);
     let source = preprocessed.trim();
 
     let reporter = ErrorReporter::new(filename, source);
