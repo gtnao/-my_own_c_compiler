@@ -126,6 +126,6 @@ pub struct Function {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub globals: Vec<(Type, String)>,
+    pub globals: Vec<(Type, String, Option<Vec<u8>>)>,
     pub functions: Vec<Function>,
 }

@@ -12,7 +12,7 @@ pub struct Parser<'a> {
     locals: Vec<(Type, String)>,
     scopes: Vec<HashMap<String, String>>,
     unique_counter: usize,
-    globals: Vec<(Type, String)>,
+    globals: Vec<(Type, String, Option<Vec<u8>>)>,
     struct_tags: HashMap<String, Type>,
     enum_values: HashMap<String, i64>,
     typedefs: HashMap<String, Type>,
@@ -146,18 +146,24 @@ impl<'a> Parser<'a> {
             let mut dims = Vec::new();
             while self.current().kind == TokenKind::LBracket {
                 self.advance();
-                let len = match &self.current().kind {
-                    TokenKind::Num(n) => *n as usize,
-                    _ => {
-                        self.reporter.error_at(
-                            self.current().pos,
-                            "expected array size",
-                        );
-                    }
-                };
-                self.advance();
-                self.expect(TokenKind::RBracket);
-                dims.push(len);
+                if self.current().kind == TokenKind::RBracket {
+                    // Empty brackets: type name[] = {...}
+                    self.advance();
+                    dims.push(0);
+                } else {
+                    let len = match &self.current().kind {
+                        TokenKind::Num(n) => *n as usize,
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected array size",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RBracket);
+                    dims.push(len);
+                }
             }
             let mut ty = ty;
             for &len in dims.iter().rev() {
@@ -166,8 +172,101 @@ impl<'a> Parser<'a> {
             ty
         };
 
-        self.expect(TokenKind::Semicolon);
-        self.globals.push((ty, name));
+        // Parse optional initializer
+        if self.current().kind == TokenKind::Eq {
+            self.advance();
+            if self.current().kind == TokenKind::LBrace {
+                // Brace initializer: = { val, val, ... }
+                self.advance();
+                let mut vals: Vec<i64> = Vec::new();
+                while self.current().kind != TokenKind::RBrace {
+                    let val = match &self.current().kind {
+                        TokenKind::Num(n) => *n,
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected constant in global initializer",
+                            );
+                        }
+                    };
+                    self.advance();
+                    vals.push(val);
+                    if self.current().kind == TokenKind::Comma {
+                        self.advance();
+                    }
+                }
+                self.expect(TokenKind::RBrace);
+                self.expect(TokenKind::Semicolon);
+
+                // Determine array size for empty brackets
+                let ty = if matches!(ty.kind, crate::types::TypeKind::Array(_, 0)) {
+                    let base = ty.base_type().unwrap().clone();
+                    Type::array_of(base, vals.len())
+                } else {
+                    ty
+                };
+
+                // Convert values to raw bytes based on element type
+                let elem_size = ty.base_type().map(|b| b.size()).unwrap_or(ty.size());
+                let mut bytes = Vec::new();
+                for val in &vals {
+                    for i in 0..elem_size {
+                        bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                    }
+                }
+                // Pad remaining space with zeros
+                let total_size = ty.size();
+                while bytes.len() < total_size {
+                    bytes.push(0);
+                }
+
+                self.globals.push((ty, name, Some(bytes)));
+            } else if let TokenKind::Str(s) = &self.current().kind {
+                // String initializer: char g[] = "hello";
+                let mut data = s.clone();
+                self.advance();
+                // Concatenate adjacent strings
+                while let TokenKind::Str(ref next) = self.current().kind {
+                    data.extend_from_slice(next);
+                    self.advance();
+                }
+                self.expect(TokenKind::Semicolon);
+
+                let array_len = data.len() + 1;
+                let ty = if matches!(ty.kind, crate::types::TypeKind::Array(_, 0)) {
+                    Type::array_of(Type::char_type(), array_len)
+                } else {
+                    ty
+                };
+
+                data.push(0); // null terminator
+                self.globals.push((ty, name, Some(data)));
+            } else {
+                // Scalar initializer: = num
+                let val = match &self.current().kind {
+                    TokenKind::Num(n) => *n,
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected constant in global initializer",
+                        );
+                    }
+                };
+                self.advance();
+                self.expect(TokenKind::Semicolon);
+
+                let elem_size = ty.size();
+                let mut bytes = Vec::new();
+                for i in 0..elem_size {
+                    bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                }
+
+                self.globals.push((ty, name, Some(bytes)));
+            }
+        } else {
+            self.expect(TokenKind::Semicolon);
+            self.globals.push((ty, name, None));
+        }
     }
 
     /// Parse a type specifier and return the corresponding Type.

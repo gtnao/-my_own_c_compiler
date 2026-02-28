@@ -455,6 +455,13 @@ assert 30 'int main() { struct { int a; int b; int c; } s = {.b = 20, .c = 30}; 
 assert 20 'int main() { struct { int a; int b; int c; } s = {.b = 20, .c = 30}; return s.b; }'
 assert 5 'int main() { struct { int x; int y; } p = {.x = 5, .y = 10}; return p.x; }'
 
+# Step 9.5: global variable static initialization
+assert 42 'int g = 42; int main() { return g; }'
+assert 3 'int a = 1; int b = 2; int main() { return a + b; }'
+assert 8 'int g[3] = {1, 2, 3}; int main() { return g[0] + g[1] + g[2] + g[0] * g[1]; }'
+assert 104 'char s[] = "hello"; int main() { return s[0]; }'
+assert 0 'char s[] = "hello"; int main() { return s[5]; }'
+
 # Step 9.4: compound literals
 assert 3 'int main() { int *p = (int[]){1, 2, 3}; return p[2]; }'
 assert 1 'int main() { int *p = (int[]){1, 2, 3}; return p[0]; }'

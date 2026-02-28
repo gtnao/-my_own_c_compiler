@@ -45,14 +45,25 @@ impl Codegen {
 
     pub fn generate(&mut self, program: &Program) -> String {
         // Register global variable names and types
-        for (ty, name) in &program.globals {
+        for (ty, name, _) in &program.globals {
             self.globals.insert(name.clone());
             self.global_types.insert(name.clone(), ty.clone());
         }
 
-        // Emit global variable declarations in .bss section
-        if !program.globals.is_empty() {
-            for (ty, name) in &program.globals {
+        // Emit global variable declarations
+        for (ty, name, init) in &program.globals {
+            if let Some(bytes) = init {
+                // Initialized global: .data section
+                self.emit("  .data");
+                let align = ty.align();
+                self.emit(&format!("  .align {}", align));
+                self.emit(&format!("  .globl {}", name));
+                self.emit(&format!("{}:", name));
+                let byte_strs: Vec<String> = bytes.iter().map(|b| format!("{}", b)).collect();
+                self.emit(&format!("  .byte {}", byte_strs.join(",")));
+                self.emit("  .text");
+            } else {
+                // Uninitialized global: .bss (via .comm)
                 let size = ty.size();
                 let align = ty.align();
                 self.emit(&format!("  .comm {}, {}, {}", name, size, align));
