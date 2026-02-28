@@ -531,6 +531,50 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 let mut param_ty = self.parse_type();
+
+                // Function pointer parameter: type (*name)(param_types)
+                if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && self.tokens[self.pos + 1].kind == TokenKind::Star
+                {
+                    self.advance(); // (
+                    self.advance(); // *
+                    let param_name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected function pointer parameter name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RParen); // )
+                    // Skip parameter type list
+                    self.expect(TokenKind::LParen);
+                    while self.current().kind != TokenKind::RParen {
+                        if self.is_type_start(&self.current().kind.clone()) {
+                            let _pty = self.parse_type();
+                            // Skip optional parameter name
+                            if let TokenKind::Ident(_) = &self.current().kind {
+                                self.advance();
+                            }
+                        }
+                        if self.current().kind == TokenKind::Comma {
+                            self.advance();
+                        }
+                    }
+                    self.expect(TokenKind::RParen);
+                    param_ty = Type::ptr_to(Type::void());
+                    let unique = self.declare_var(&param_name, param_ty.clone());
+                    params.push((param_ty, unique));
+                    if self.current().kind != TokenKind::Comma {
+                        break;
+                    }
+                    self.advance();
+                    continue;
+                }
+
                 let param_name = match &self.current().kind {
                     TokenKind::Ident(s) => s.clone(),
                     _ => {

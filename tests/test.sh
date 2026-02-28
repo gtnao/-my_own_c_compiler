@@ -604,6 +604,11 @@ assert 1 'int gcd(int a, int b) { while (b != 0) { int t = b; b = a % b; a = t; 
 assert 8 'int power(int base, int exp) { int result = 1; while (exp > 0) { result *= base; exp--; } return result; } int main() { return power(2, 3); }'
 assert 27 'int power(int base, int exp) { int result = 1; while (exp > 0) { result *= base; exp--; } return result; } int main() { return power(3, 3); }'
 
+# Step 11.4: Callback pattern
+assert 10 'int apply(int (*f)(int), int x) { return f(x); } int dbl(int x) { return x * 2; } int main() { return apply(dbl, 5); }'
+assert 25 'int apply(int (*f)(int), int x) { return f(x); } int sq(int x) { return x * x; } int main() { return apply(sq, 5); }'
+assert 12 'int map_sum(int *a, int n, int (*f)(int)) { int s = 0; int i; for (i = 0; i < n; i++) s += f(a[i]); return s; } int dbl(int x) { return x * 2; } int main() { int a[3] = {1, 2, 3}; return map_sum(a, 3, dbl); }'
+
 # Struct-based linked list simulation (via array)
 assert 15 'int main() { int vals[5] = {1, 2, 3, 4, 5}; int sum = 0; int i; for (i = 0; i < 5; i++) sum += vals[i]; return sum; }'
 
