@@ -937,7 +937,237 @@ main:
 
 ---
 
-## 合計: 92 steps across 13 phases
+## Phase 14: PostgreSQL互換性修正 (30 steps, 完了済み)
+
+Steps 14.1–14.30: PostgreSQLコンパイルに必要な様々なバグ修正と機能追加。
+詳細は `docs/step_14_*.md` を参照。
+
+---
+
+## Phase 15: 高度な宣言とType System拡張 (8 steps)
+
+### Step 15.1: 同一行での複数変数宣言（完全対応）
+- `int a, b, *c, d[10];` — カンマ区切りの宣言子を正しくパース
+- ポインタ修飾子やarray修飾子を個別の宣言子ごとに処理
+- PostgreSQLは `int i, j, k;` パターンを多用
+
+### Step 15.2: long long型
+- `long long` / `unsigned long long` の独立した型としてのサポート
+- 現在は `long` と同一視されているが、型名として区別する必要がある
+- PostgreSQLの `int64` / `uint64` 型に対応
+
+### Step 15.3: 複雑な型宣言子パース強化
+- 関数ポインタを返す関数: `int (*foo(void))(int)`
+- ポインタの配列: `int *a[10]`
+- 配列へのポインタ: `int (*a)[10]`
+- 関数ポインタの配列: `int (*ops[10])(int, int)`
+
+### Step 15.4: K&R スタイル関数宣言（レガシーサポート）
+- 古い形式の関数宣言: `int foo(a, b) int a; int b; { ... }`
+- PostgreSQLの古いコードや外部ライブラリで使用される可能性
+
+### Step 15.5: 匿名構造体/ユニオンメンバ（C11）
+- `struct { union { int a; float b; }; int c; };`
+- 外側の構造体から直接メンバにアクセス可能
+
+### Step 15.6: 関数プロトタイプにおける抽象宣言子
+- `void foo(int (*)(int, int))` — パラメータ名なしの宣言
+- `sizeof(int (*)[10])` — sizeof内での複雑な型
+
+### Step 15.7: typeof / __typeof__ の完全実装
+- `typeof(expr)` および `typeof(type)` の完全サポート
+- 変数宣言で使用: `typeof(x) y = x;`
+- PostgreSQLのマクロで使用
+
+### Step 15.8: _Static_assert の実装
+- `_Static_assert(expr, "message")` — コンパイル時アサーション
+- PostgreSQLの StaticAssertStmt マクロに対応
+
+---
+
+## Phase 16: プリプロセッサ拡張 (8 steps)
+
+### Step 16.1: 可変引数マクロ（__VA_ARGS__）
+- `#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)`
+- PostgreSQLの `elog()` / `ereport()` マクロに必須
+
+### Step 16.2: defined() 演算子
+- `#if defined(FOO)` および `#if defined FOO`
+- `#if !defined(BAR) && defined(BAZ)`
+
+### Step 16.3: #if における複雑な定数式
+- `#if SIZEOF_LONG == 8`
+- `#if defined(A) && (B > 2 || C == 0)`
+- 整数定数式の完全な評価
+
+### Step 16.4: #undef ディレクティブ
+- マクロの未定義化
+- ヘッダーガードの管理に重要
+
+### Step 16.5: 事前定義マクロの拡張
+- `__STDC__`, `__STDC_VERSION__`, `__STDC_HOSTED__`
+- `__GNUC__`, `__GNUC_MINOR__` (GCC互換)
+- `__LP64__`, `__x86_64__`, `__linux__`
+- コンパイラ識別マクロ
+
+### Step 16.6: #pragma once と #pragma pack
+- ヘッダーの重複インクルード防止
+- 構造体パッキング制御
+
+### Step 16.7: マクロ内改行とバックスラッシュ継続行
+- `#define MACRO(x) \`  による複数行マクロ
+- 既存のバックスラッシュ継続行サポートの強化
+
+### Step 16.8: 条件付きインクルードと #include_next
+- `#include_next <header.h>` (GCC拡張)
+- ヘッダーサーチパスの完全対応
+
+---
+
+## Phase 17: 標準ライブラリヘッダスタブ (6 steps)
+
+### Step 17.1: stddef.h / stdint.h / stdbool.h スタブ
+- `NULL`, `size_t`, `ptrdiff_t`, `offsetof` マクロ
+- `int8_t` ～ `uint64_t`、`intmax_t`、`uintmax_t`
+- `true`, `false`, `bool`
+
+### Step 17.2: stdio.h / stdlib.h スタブ
+- `FILE *`, `stdin`/`stdout`/`stderr` 宣言
+- `printf`, `fprintf`, `sprintf`, `snprintf` 宣言
+- `malloc`, `calloc`, `realloc`, `free` 宣言
+- `exit`, `abort`, `atexit` 宣言
+
+### Step 17.3: string.h / strings.h スタブ
+- `memcpy`, `memset`, `memmove`, `memcmp` 宣言
+- `strlen`, `strcpy`, `strncpy`, `strcmp`, `strncmp` 宣言
+- `strdup`, `strndup` 宣言
+
+### Step 17.4: stdarg.h スタブ
+- `va_list`, `va_start`, `va_arg`, `va_end`, `va_copy` マクロ定義
+- 現在のビルトイン実装との連携
+
+### Step 17.5: errno.h / limits.h / assert.h スタブ
+- `errno` 宣言
+- `INT_MAX`, `INT_MIN`, `LONG_MAX`, `CHAR_BIT` 等の定数
+- `assert` マクロ
+
+### Step 17.6: sys/ ヘッダ群スタブ (POSIX)
+- `sys/types.h`: `pid_t`, `uid_t`, `gid_t`, `off_t`, `mode_t`
+- `sys/stat.h`: `struct stat`, `stat()`, `fstat()`
+- `unistd.h`: `read`, `write`, `close`, `fork`, `exec*`
+- `fcntl.h`: `open`, `O_RDONLY` 等
+
+---
+
+## Phase 18: GCC拡張とビルトイン (8 steps)
+
+### Step 18.1: __attribute__ のセマンティック対応
+- `__attribute__((packed))` — パディング除去
+- `__attribute__((aligned(N)))` — アライメント指定
+- `__attribute__((noreturn))` — 戻り値なし関数
+- `__attribute__((unused))` — 未使用警告抑制
+- `__attribute__((format(printf, N, M)))` — 書式チェック（無視でOK）
+
+### Step 18.2: 文式 (Statement Expressions)
+- `({ stmt; stmt; expr; })` — ブロック内最後の式が値
+- GNUマクロで多用: `#define MAX(a,b) ({ typeof(a) _a=(a); typeof(b) _b=(b); _a>_b?_a:_b; })`
+
+### Step 18.3: __builtin 関数の拡張
+- `__builtin_expect(expr, val)` — 既にサポート済み
+- `__builtin_clz`, `__builtin_ctz` — ビット操作
+- `__builtin_bswap16/32/64` — バイトスワップ
+- `__builtin_popcount` — ポピュレーションカウント
+- `__builtin_trap` — トラップ命令
+- `__builtin_choose_expr` — コンパイル時条件分岐
+
+### Step 18.4: インラインアセンブリ（スキップ/最小対応）
+- `asm()` / `__asm__()` / `__asm__ volatile()` — パースしてスキップ
+- PostgreSQLのスピンロック実装で使用されるが、代替実装も可能
+
+### Step 18.5: 計算goto (Computed Goto)
+- `void *label_ptr = &&label; goto *label_ptr;`
+- PostgreSQLのインタプリタディスパッチで使用
+
+### Step 18.6: __extension__ キーワードの完全対応
+- GCC拡張使用時の警告抑制
+- `__extension__ typedef unsigned long long uint64_t;`
+
+### Step 18.7: _Thread_local / __thread
+- スレッドローカルストレージ変数
+- `.tbss` / `.tdata` セクション、`%fs` セグメントレジスタ
+
+### Step 18.8: __builtin_types_compatible_p と型関連ビルトイン
+- 型互換性チェック（既に部分実装済み）
+- `__builtin_classify_type`
+
+---
+
+## Phase 19: 高度なコード生成 (6 steps)
+
+### Step 19.1: 構造体の値渡しと値返し（ABI完全準拠）
+- System V AMD64 ABI に従った分類: INTEGER, SSE, MEMORY
+- 小さな構造体（≤16バイト）はレジスタ渡し
+- 大きな構造体はスタック経由（hidden pointer）
+
+### Step 19.2: 浮動小数点演算の完全対応
+- `float` / `double` 四則演算
+- XMMレジスタの活用
+- float ↔ double ↔ int 変換
+- 関数引数としてのfloat/double（XMMレジスタ渡し）
+
+### Step 19.3: volatile変数のセマンティクス
+- メモリアクセスの最適化防止
+- PostgreSQL のシグナルハンドラ関連で使用
+
+### Step 19.4: 可変長配列 (VLA)
+- `int a[n];` — 実行時サイズの配列
+- `alloca` 相当のスタック確保
+
+### Step 19.5: 複合リテラルの完全対応
+- `(struct Point){.x = 1, .y = 2}` — 一時変数として生成
+- 関数引数として直接使用可能
+
+### Step 19.6: ビットフィールドのABI準拠レイアウト
+- ビットフィールドのパッキング規則
+- unsigned/signed ビットフィールド
+- ビットフィールド間のパディング
+
+---
+
+## Phase 20: PostgreSQL統合テスト (8 steps)
+
+### Step 20.1: PostgreSQLビルドシステム連携
+- Makefileベースのビルドプロセスとの連携
+- `CC=our_compiler` での差し替えコンパイル
+
+### Step 20.2: pg_config.h の処理
+- PostgreSQLのconfigure生成ヘッダ
+- プラットフォーム固有の定義
+
+### Step 20.3: c.h (PostgreSQLの基盤ヘッダ) のコンパイル
+- PostgreSQL全体で使用される基本型・マクロの集合
+- ここが通れば多くのソースファイルがコンパイル可能に
+
+### Step 20.4: nodes/ ディレクトリのコンパイル
+- Node, List, Value 等の基本データ構造
+- PostgreSQLのASTノード定義
+
+### Step 20.5: utils/ の基本ユーティリティのコンパイル
+- メモリ管理、文字列操作、エラー処理
+
+### Step 20.6: parser/ のコンパイル
+- SQL パーサー (bison 生成コード含む)
+
+### Step 20.7: executor/ のコンパイル
+- クエリ実行エンジン
+
+### Step 20.8: 統合テスト — PostgreSQL起動テスト
+- initdb + pg_ctl start が成功すること
+- 基本的なSQLクエリが実行できること
+
+---
+
+## 合計: 136+ steps across 20 phases
 
 ## x86-64 コード生成の重要な規約
 

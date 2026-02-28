@@ -1725,6 +1725,18 @@ impl<'a> Parser<'a> {
                             }
                         };
                         self.advance();
+                        // Parse array dimensions for this declarator
+                        while self.current().kind == TokenKind::LBracket {
+                            self.advance();
+                            if self.current().kind == TokenKind::RBracket {
+                                self.advance();
+                                decl_ty = Type { kind: TypeKind::Array(Box::new(decl_ty), 0), is_unsigned: false };
+                            } else {
+                                let size = self.eval_const_expr();
+                                self.expect(TokenKind::RBracket);
+                                decl_ty = Type { kind: TypeKind::Array(Box::new(decl_ty), size as usize), is_unsigned: false };
+                            }
+                        }
                         let next_init = if self.current().kind == TokenKind::Eq {
                             self.advance();
                             Some(self.assign())
@@ -1768,6 +1780,18 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
+                // Parse array dimensions for this declarator
+                while self.current().kind == TokenKind::LBracket {
+                    self.advance();
+                    if self.current().kind == TokenKind::RBracket {
+                        self.advance();
+                        decl_ty = Type { kind: TypeKind::Array(Box::new(decl_ty), 0), is_unsigned: false };
+                    } else {
+                        let size = self.eval_const_expr();
+                        self.expect(TokenKind::RBracket);
+                        decl_ty = Type { kind: TypeKind::Array(Box::new(decl_ty), size as usize), is_unsigned: false };
+                    }
+                }
                 let next_init = if self.current().kind == TokenKind::Eq {
                     self.advance();
                     Some(self.assign())
