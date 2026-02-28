@@ -607,6 +607,11 @@ assert 27 'int power(int base, int exp) { int result = 1; while (exp > 0) { resu
 # Struct-based linked list simulation (via array)
 assert 15 'int main() { int vals[5] = {1, 2, 3, 4, 5}; int sum = 0; int i; for (i = 0; i < 5; i++) sum += vals[i]; return sum; }'
 
+# Step 11.3: Function pointers
+assert 7 'int add(int a, int b) { return a + b; } int main() { int (*fp)(int, int) = add; return fp(3, 4); }'
+assert 2 'int sub(int a, int b) { return a - b; } int main() { int (*fp)(int, int) = sub; return fp(5, 3); }'
+assert 42 'int ret42() { return 42; } int main() { int (*fp)() = ret42; return fp(); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

@@ -828,7 +828,56 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse function pointer declaration: type (*name)(param_types) (= expr)?;
+    /// The return type has already been parsed. Current token is '('.
+    fn parse_func_ptr_decl(&mut self, _return_ty: Type) -> Stmt {
+        self.expect(TokenKind::LParen);  // (
+        self.expect(TokenKind::Star);    // *
+        let name = match &self.current().kind {
+            TokenKind::Ident(s) => s.clone(),
+            _ => {
+                self.reporter.error_at(
+                    self.current().pos,
+                    "expected function pointer name",
+                );
+            }
+        };
+        self.advance();
+        self.expect(TokenKind::RParen);  // )
+
+        // Parse parameter type list: (type, type, ...)
+        self.expect(TokenKind::LParen);
+        while self.current().kind != TokenKind::RParen {
+            if self.is_type_start(&self.current().kind.clone()) {
+                let _param_ty = self.parse_type();
+                // Skip optional parameter name
+                if let TokenKind::Ident(_) = &self.current().kind {
+                    self.advance();
+                }
+            }
+            if self.current().kind == TokenKind::Comma {
+                self.advance();
+            }
+        }
+        self.expect(TokenKind::RParen);
+
+        // Function pointer is stored as Ptr(Void) — an 8-byte pointer
+        let fptr_ty = Type::ptr_to(Type::void());
+        let unique = self.declare_var(&name, fptr_ty.clone());
+
+        // Optional initializer
+        let init = if self.current().kind == TokenKind::Eq {
+            self.advance();
+            Some(self.assign())
+        } else {
+            None
+        };
+        self.expect(TokenKind::Semicolon);
+        Stmt::VarDecl { name: unique, ty: fptr_ty, init }
+    }
+
     // var_decl = type ident ("[" num "]")* ("=" expr)? ";"
+    //         | type "(" "*" ident ")" "(" param_types ")" ("=" expr)? ";"
     //         | "struct" tag "{" ... "}" ";"  (tag definition only)
     fn var_decl(&mut self) -> Stmt {
         let ty = self.parse_type();
@@ -837,6 +886,15 @@ impl<'a> Parser<'a> {
             self.advance();
             return Stmt::Block(vec![]);
         }
+
+        // Function pointer declaration: type (*name)(param_types)
+        if self.current().kind == TokenKind::LParen
+            && self.pos + 1 < self.tokens.len()
+            && self.tokens[self.pos + 1].kind == TokenKind::Star
+        {
+            return self.parse_func_ptr_decl(ty);
+        }
+
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
@@ -1713,6 +1771,14 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(TokenKind::RParen);
+                    // If the name is a declared variable, it's a function pointer call
+                    if self.is_var_declared(&name) {
+                        let resolved = self.resolve_var(&name);
+                        return Expr::FuncPtrCall {
+                            fptr: Box::new(Expr::Var(resolved)),
+                            args,
+                        };
+                    }
                     return Expr::FuncCall { name, args };
                 }
                 // Check for enum constant
@@ -1942,6 +2008,21 @@ impl<'a> Parser<'a> {
         }
         // Fallback: return original name (may be a global variable)
         name.to_string()
+    }
+
+    /// Check if a variable name is declared in any scope (local or global).
+    /// Excludes extern-declared names (which are function prototypes, not variables).
+    fn is_var_declared(&self, name: &str) -> bool {
+        for scope in self.scopes.iter().rev() {
+            if scope.contains_key(name) {
+                return true;
+            }
+        }
+        // Check global variables, excluding extern declarations
+        if self.extern_names.contains(name) {
+            return false;
+        }
+        self.globals.iter().any(|(_, n, _)| n == name)
     }
 }
 

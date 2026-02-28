@@ -60,6 +60,10 @@ pub enum Expr {
         name: String,
         args: Vec<Expr>,
     },
+    FuncPtrCall {
+        fptr: Box<Expr>,
+        args: Vec<Expr>,
+    },
     Cast {
         ty: Type,
         expr: Box<Expr>,

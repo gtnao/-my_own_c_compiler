@@ -493,8 +493,17 @@ impl Codegen {
                 }
             }
             Expr::FuncCall { name, args } => {
-                let num_stack_args = if args.len() > 6 { args.len() - 6 } else { 0 };
+                self.gen_call(args, |codegen| {
+                    codegen.emit(&format!("  call {}", name));
+                });
+            }
+            Expr::FuncPtrCall { fptr, args } => {
+                // Evaluate function pointer first
+                self.gen_expr(fptr);
+                // Save to %r10 (caller-saved, not used by argument passing)
+                self.emit("  mov %rax, %r10");
 
+                let num_stack_args = if args.len() > 6 { args.len() - 6 } else { 0 };
                 let needs_align = (self.stack_depth + num_stack_args) % 2 != 0;
                 if needs_align {
                     self.emit("  sub $8, %rsp");
@@ -518,15 +527,13 @@ impl Codegen {
                     self.pop(arg_regs[i]);
                 }
 
-                // Set %al to 0 for variadic functions (number of vector registers used)
                 self.emit("  mov $0, %al");
-                self.emit(&format!("  call {}", name));
+                self.emit("  call *%r10");
 
                 if num_stack_args > 0 {
                     self.emit(&format!("  add ${}, %rsp", num_stack_args * 8));
                     self.stack_depth -= num_stack_args;
                 }
-
                 if needs_align {
                     self.emit("  add $8, %rsp");
                     self.stack_depth -= 1;
@@ -822,7 +829,54 @@ impl Codegen {
             Expr::Comma(_, rhs) => self.expr_type(rhs),
             Expr::VaArg { ty, .. } => ty.clone(),
             Expr::VaStart { .. } => Type::void(),
+            Expr::FuncPtrCall { .. } => Type::long_type(),
             _ => Type::long_type(),
+        }
+    }
+
+    /// Generate a function call with args setup, alignment, and cleanup.
+    /// The `emit_call` closure should emit the actual call instruction.
+    fn gen_call<F>(&mut self, args: &[Expr], emit_call: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        let num_stack_args = if args.len() > 6 { args.len() - 6 } else { 0 };
+
+        let needs_align = (self.stack_depth + num_stack_args) % 2 != 0;
+        if needs_align {
+            self.emit("  sub $8, %rsp");
+            self.stack_depth += 1;
+        }
+
+        // Push stack arguments (7th and beyond) in reverse order
+        for i in (6..args.len()).rev() {
+            self.gen_expr(&args[i]);
+            self.push();
+        }
+
+        // Evaluate first 6 register arguments
+        let reg_count = std::cmp::min(args.len(), 6);
+        for i in 0..reg_count {
+            self.gen_expr(&args[i]);
+            self.push();
+        }
+        let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+        for i in (0..reg_count).rev() {
+            self.pop(arg_regs[i]);
+        }
+
+        // Set %al to 0 for variadic functions (number of vector registers used)
+        self.emit("  mov $0, %al");
+        emit_call(self);
+
+        if num_stack_args > 0 {
+            self.emit(&format!("  add ${}, %rsp", num_stack_args * 8));
+            self.stack_depth -= num_stack_args;
+        }
+
+        if needs_align {
+            self.emit("  add $8, %rsp");
+            self.stack_depth -= 1;
         }
     }
 
@@ -877,6 +931,11 @@ impl Codegen {
     }
 
     fn emit_load_var(&mut self, name: &str) {
+        // If name is not a declared variable, treat it as a function name (function-to-pointer decay)
+        if !self.locals.contains_key(name) && !self.globals.contains(name) {
+            self.emit(&format!("  lea {}(%rip), %rax", name));
+            return;
+        }
         let ty = self.get_var_type(name);
         if self.globals.contains(name) {
             match ty.kind {
