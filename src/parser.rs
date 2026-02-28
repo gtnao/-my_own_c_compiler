@@ -188,9 +188,9 @@ impl<'a> Parser<'a> {
         self.assign()
     }
 
-    // assign = equality ("=" assign | "+=" assign | "-=" assign | "*=" assign | "/=" assign | "%=" assign)?
+    // assign = logical_or ("=" assign | "+=" assign | "-=" assign | "*=" assign | "/=" assign | "%=" assign)?
     fn assign(&mut self) -> Expr {
-        let node = self.equality();
+        let node = self.logical_or();
 
         if self.current().kind == TokenKind::Eq {
             self.advance();
@@ -200,6 +200,7 @@ impl<'a> Parser<'a> {
                 rhs: Box::new(rhs),
             };
         }
+
 
         // Compound assignment: desugar a op= b into a = a op b
         let op = match self.current().kind {
@@ -222,6 +223,32 @@ impl<'a> Parser<'a> {
                     rhs: Box::new(rhs),
                 }),
             };
+        }
+
+        node
+    }
+
+    // logical_or = logical_and ("||" logical_and)*
+    fn logical_or(&mut self) -> Expr {
+        let mut node = self.logical_and();
+
+        while self.current().kind == TokenKind::PipePipe {
+            self.advance();
+            let rhs = self.logical_and();
+            node = Expr::LogicalOr(Box::new(node), Box::new(rhs));
+        }
+
+        node
+    }
+
+    // logical_and = equality ("&&" equality)*
+    fn logical_and(&mut self) -> Expr {
+        let mut node = self.equality();
+
+        while self.current().kind == TokenKind::AmpAmp {
+            self.advance();
+            let rhs = self.equality();
+            node = Expr::LogicalAnd(Box::new(node), Box::new(rhs));
         }
 
         node
@@ -390,6 +417,14 @@ impl<'a> Parser<'a> {
                 let operand = self.unary();
                 Expr::UnaryOp {
                     op: UnaryOp::Neg,
+                    operand: Box::new(operand),
+                }
+            }
+            TokenKind::Bang => {
+                self.advance();
+                let operand = self.unary();
+                Expr::UnaryOp {
+                    op: UnaryOp::LogicalNot,
                     operand: Box::new(operand),
                 }
             }

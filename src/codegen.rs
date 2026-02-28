@@ -154,7 +154,44 @@ impl Codegen {
                     UnaryOp::Neg => {
                         self.emit("  neg %rax");
                     }
+                    UnaryOp::LogicalNot => {
+                        self.emit("  cmp $0, %rax");
+                        self.emit("  sete %al");
+                        self.emit("  movzb %al, %rax");
+                    }
                 }
+            }
+            Expr::LogicalAnd(lhs, rhs) => {
+                let false_label = self.new_label();
+                let end_label = self.new_label();
+
+                self.gen_expr(lhs);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  je {}", false_label));
+                self.gen_expr(rhs);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  je {}", false_label));
+                self.emit("  mov $1, %rax");
+                self.emit(&format!("  jmp {}", end_label));
+                self.emit(&format!("{}:", false_label));
+                self.emit("  mov $0, %rax");
+                self.emit(&format!("{}:", end_label));
+            }
+            Expr::LogicalOr(lhs, rhs) => {
+                let true_label = self.new_label();
+                let end_label = self.new_label();
+
+                self.gen_expr(lhs);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  jne {}", true_label));
+                self.gen_expr(rhs);
+                self.emit("  cmp $0, %rax");
+                self.emit(&format!("  jne {}", true_label));
+                self.emit("  mov $0, %rax");
+                self.emit(&format!("  jmp {}", end_label));
+                self.emit(&format!("{}:", true_label));
+                self.emit("  mov $1, %rax");
+                self.emit(&format!("{}:", end_label));
             }
             Expr::PreInc(operand) => {
                 // ++a: increment a, return new value

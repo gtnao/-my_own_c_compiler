@@ -112,6 +112,21 @@ assert 4 'int main() { int a = 5; a--; return a; }'
 assert 5 'int main() { int a = 5; return a--; }'
 assert 4 'int main() { int a = 5; return --a; }'
 
+# Step 2.11: logical operators
+assert 1 'int main() { return 1 && 1; }'
+assert 0 'int main() { return 1 && 0; }'
+assert 0 'int main() { return 0 && 1; }'
+assert 0 'int main() { return 0 && 0; }'
+assert 1 'int main() { return 1 || 0; }'
+assert 1 'int main() { return 0 || 1; }'
+assert 0 'int main() { return 0 || 0; }'
+assert 1 'int main() { return 1 || 1; }'
+assert 1 'int main() { return !0; }'
+assert 0 'int main() { return !1; }'
+assert 0 'int main() { return !42; }'
+assert 1 'int main() { return 2 && 3; }'
+assert 1 'int main() { return 2 || 0; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

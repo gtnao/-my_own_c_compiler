@@ -16,6 +16,7 @@ pub enum BinOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
     Neg,
+    LogicalNot,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +36,8 @@ pub enum Expr {
         op: UnaryOp,
         operand: Box<Expr>,
     },
+    LogicalAnd(Box<Expr>, Box<Expr>),
+    LogicalOr(Box<Expr>, Box<Expr>),
     PreInc(Box<Expr>),
     PreDec(Box<Expr>),
     PostInc(Box<Expr>),

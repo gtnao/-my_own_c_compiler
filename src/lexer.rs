@@ -67,6 +67,16 @@ impl<'a> Lexer<'a> {
                 tokens.push(Token { kind: TokenKind::Ne, pos });
                 continue;
             }
+            if ch == '&' && self.peek_next() == Some('&') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::AmpAmp, pos });
+                continue;
+            }
+            if ch == '|' && self.peek_next() == Some('|') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::PipePipe, pos });
+                continue;
+            }
             if ch == '<' && self.peek_next() == Some('=') {
                 self.pos += 2;
                 tokens.push(Token { kind: TokenKind::Le, pos });
@@ -122,6 +132,7 @@ impl<'a> Lexer<'a> {
                 '<' => TokenKind::Lt,
                 '>' => TokenKind::Gt,
                 '=' => TokenKind::Eq,
+                '!' => TokenKind::Bang,
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
                 '{' => TokenKind::LBrace,
