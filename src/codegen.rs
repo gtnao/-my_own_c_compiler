@@ -1053,6 +1053,7 @@ impl Codegen {
                 }
             }
             Expr::Comma(_, rhs) => self.expr_type(rhs),
+            Expr::Cast { ty, .. } => ty.clone(),
             Expr::VaArg { ty, .. } => ty.clone(),
             Expr::VaStart { .. } => Type::void(),
             Expr::FuncPtrCall { .. } => Type::long_type(),

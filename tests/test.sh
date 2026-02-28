@@ -829,6 +829,10 @@ assert 7 'int add(int a, int b) { return a + b; } int main() { return add(3, 4);
 assert 10 'struct Foo; typedef struct Foo *FooPtr; struct Foo { int x; int y; }; int main() { struct Foo f; f.x = 3; f.y = 7; FooPtr p = &f; return p->x + p->y; }'
 assert 5 'struct Ctx; typedef struct Ctx *CtxPtr; struct Ctx { int type; CtxPtr parent; }; int main() { struct Ctx c; c.type = 5; c.parent = 0; CtxPtr p = &c; return p->type; }'
 
+# Step 14.23: fix expr_type for Cast expressions
+assert 5 'int main() { int a=10; int b=5; void *pa=&a; void *pb=&b; return *(int*)pa - *(int*)pb; }'
+assert 1 'int int_cmp(void *a, void *b) { return *(int*)a - *(int*)b; } int main() { int x=10; int y=5; if (int_cmp(&x, &y) > 0) return 1; return 0; }'
+
 # Step 14.22: built-in fixed-width integer types
 assert 1 'int main() { int8_t a = 1; return a; }'
 assert 2 'int main() { int16_t a = 2; return a; }'
