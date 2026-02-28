@@ -21,6 +21,11 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Num(i64),
+    Var(String),
+    Assign {
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     BinOp {
         op: BinOp,
         lhs: Box<Expr>,
@@ -36,6 +41,10 @@ pub enum Expr {
 pub enum Stmt {
     Return(Expr),
     ExprStmt(Expr),
+    VarDecl {
+        name: String,
+        init: Option<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

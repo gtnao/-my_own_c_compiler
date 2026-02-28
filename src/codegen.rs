@@ -1,21 +1,40 @@
 use crate::ast::{BinOp, Expr, Function, Stmt, UnaryOp};
+use std::collections::HashMap;
 
 pub struct Codegen {
     output: String,
+    locals: HashMap<String, usize>,
+    stack_size: usize,
 }
 
 impl Codegen {
     pub fn new() -> Self {
         Self {
             output: String::new(),
+            locals: HashMap::new(),
+            stack_size: 0,
         }
     }
 
-    pub fn generate(&mut self, func: &Function) -> String {
+    pub fn generate(&mut self, func: &Function, local_vars: &[String]) -> String {
+        // Set up local variable offsets on stack
+        self.locals.clear();
+        for (i, name) in local_vars.iter().enumerate() {
+            self.locals.insert(name.clone(), (i + 1) * 8);
+        }
+        self.stack_size = local_vars.len() * 8;
+        // Align stack to 16 bytes
+        if self.stack_size % 16 != 0 {
+            self.stack_size = (self.stack_size + 15) & !15;
+        }
+
         self.emit(&format!("  .globl {}", func.name));
         self.emit(&format!("{}:", func.name));
         self.emit("  push %rbp");
         self.emit("  mov %rsp, %rbp");
+        if self.stack_size > 0 {
+            self.emit(&format!("  sub ${}, %rsp", self.stack_size));
+        }
 
         for stmt in &func.body {
             self.gen_stmt(stmt);
@@ -40,6 +59,13 @@ impl Codegen {
             Stmt::ExprStmt(expr) => {
                 self.gen_expr(expr);
             }
+            Stmt::VarDecl { name, init } => {
+                if let Some(expr) = init {
+                    self.gen_expr(expr);
+                    let offset = self.locals[name];
+                    self.emit(&format!("  mov %rax, -{}(%rbp)", offset));
+                }
+            }
         }
     }
 
@@ -47,6 +73,20 @@ impl Codegen {
         match expr {
             Expr::Num(val) => {
                 self.emit(&format!("  mov ${}, %rax", val));
+            }
+            Expr::Var(name) => {
+                let offset = self.locals[name];
+                self.emit(&format!("  mov -{}(%rbp), %rax", offset));
+            }
+            Expr::Assign { lhs, rhs } => {
+                self.gen_expr(rhs);
+                match lhs.as_ref() {
+                    Expr::Var(name) => {
+                        let offset = self.locals[name];
+                        self.emit(&format!("  mov %rax, -{}(%rbp)", offset));
+                    }
+                    _ => {}
+                }
             }
             Expr::UnaryOp { op, operand } => {
                 self.gen_expr(operand);
@@ -134,23 +174,27 @@ mod tests {
             name: "main".to_string(),
             body: vec![Stmt::Return(Expr::Num(42))],
         };
-        let output = codegen.generate(&func);
+        let output = codegen.generate(&func, &[]);
         assert!(output.contains("mov $42, %rax"));
         assert!(output.contains("jmp .Lreturn.main"));
     }
 
     #[test]
-    fn test_expr_stmt_and_return() {
+    fn test_var_decl_and_return() {
         let mut codegen = Codegen::new();
         let func = Function {
             name: "main".to_string(),
             body: vec![
-                Stmt::ExprStmt(Expr::Num(1)),
-                Stmt::Return(Expr::Num(3)),
+                Stmt::VarDecl {
+                    name: "a".to_string(),
+                    init: Some(Expr::Num(5)),
+                },
+                Stmt::Return(Expr::Var("a".to_string())),
             ],
         };
-        let output = codegen.generate(&func);
-        assert!(output.contains("mov $1, %rax"));
-        assert!(output.contains("mov $3, %rax"));
+        let output = codegen.generate(&func, &["a".to_string()]);
+        assert!(output.contains("sub $16, %rsp"));
+        assert!(output.contains("mov %rax, -8(%rbp)"));
+        assert!(output.contains("mov -8(%rbp), %rax"));
     }
 }

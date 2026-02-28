@@ -82,6 +82,7 @@ impl<'a> Lexer<'a> {
                 '%' => TokenKind::Percent,
                 '<' => TokenKind::Lt,
                 '>' => TokenKind::Gt,
+                '=' => TokenKind::Eq,
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
                 '{' => TokenKind::LBrace,

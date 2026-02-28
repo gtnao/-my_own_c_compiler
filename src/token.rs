@@ -11,6 +11,7 @@ pub enum TokenKind {
     Star,
     Slash,
     Percent,
+    Eq,
     EqEq,
     Ne,
     Lt,

@@ -6,11 +6,12 @@ pub struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
     reporter: &'a ErrorReporter,
+    locals: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: Vec<Token>, reporter: &'a ErrorReporter) -> Self {
-        Self { tokens, pos: 0, reporter }
+        Self { tokens, pos: 0, reporter, locals: Vec::new() }
     }
 
     // program = function
@@ -42,6 +43,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::RParen);
         self.expect(TokenKind::LBrace);
 
+        self.locals.clear();
         let mut body = Vec::new();
         while self.current().kind != TokenKind::RBrace {
             body.push(self.stmt());
@@ -52,6 +54,7 @@ impl<'a> Parser<'a> {
     }
 
     // stmt = "return" expr ";"
+    //      | "int" ident ("=" expr)? ";"
     //      | expr ";"
     fn stmt(&mut self) -> Stmt {
         match &self.current().kind {
@@ -61,6 +64,9 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::Semicolon);
                 Stmt::Return(expr)
             }
+            TokenKind::Int => {
+                self.var_decl()
+            }
             _ => {
                 let expr = self.expr();
                 self.expect(TokenKind::Semicolon);
@@ -69,9 +75,53 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // expr = equality
+    // var_decl = "int" ident ("=" expr)? ";"
+    fn var_decl(&mut self) -> Stmt {
+        self.expect(TokenKind::Int);
+        let name = match &self.current().kind {
+            TokenKind::Ident(s) => s.clone(),
+            _ => {
+                self.reporter.error_at(
+                    self.current().pos,
+                    "expected variable name",
+                );
+            }
+        };
+        self.advance();
+
+        if !self.locals.contains(&name) {
+            self.locals.push(name.clone());
+        }
+
+        let init = if self.current().kind == TokenKind::Eq {
+            self.advance();
+            Some(self.expr())
+        } else {
+            None
+        };
+        self.expect(TokenKind::Semicolon);
+        Stmt::VarDecl { name, init }
+    }
+
+    // expr = assign
     fn expr(&mut self) -> Expr {
-        self.equality()
+        self.assign()
+    }
+
+    // assign = equality ("=" assign)?
+    fn assign(&mut self) -> Expr {
+        let node = self.equality();
+
+        if self.current().kind == TokenKind::Eq {
+            self.advance();
+            let rhs = self.assign();
+            return Expr::Assign {
+                lhs: Box::new(node),
+                rhs: Box::new(rhs),
+            };
+        }
+
+        node
     }
 
     // equality = relational ("==" relational | "!=" relational)*
@@ -244,12 +294,16 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // primary = num | "(" expr ")"
+    // primary = num | ident | "(" expr ")"
     fn primary(&mut self) -> Expr {
-        match self.current().kind {
+        match self.current().kind.clone() {
             TokenKind::Num(val) => {
                 self.advance();
                 Expr::Num(val)
+            }
+            TokenKind::Ident(name) => {
+                self.advance();
+                Expr::Var(name)
             }
             TokenKind::LParen => {
                 self.advance();
@@ -260,10 +314,14 @@ impl<'a> Parser<'a> {
             _ => {
                 self.reporter.error_at(
                     self.current().pos,
-                    &format!("expected a number or '(', but got {:?}", self.current().kind),
+                    &format!("expected a number, identifier or '(', but got {:?}", self.current().kind),
                 );
             }
         }
+    }
+
+    pub fn get_locals(&self) -> &[String] {
+        &self.locals
     }
 
     fn current(&self) -> &Token {
@@ -323,5 +381,22 @@ mod tests {
             Stmt::Return(Expr::BinOp { op: BinOp::Add, .. }) => {}
             _ => panic!("expected return with add"),
         }
+    }
+
+    #[test]
+    fn test_var_decl() {
+        let func = parse_func("int main() { int a; a = 3; return a; }");
+        assert_eq!(func.body.len(), 3);
+        assert_eq!(func.body[0], Stmt::VarDecl { name: "a".to_string(), init: None });
+    }
+
+    #[test]
+    fn test_var_with_init() {
+        let func = parse_func("int main() { int a = 5; return a; }");
+        assert_eq!(func.body.len(), 2);
+        assert_eq!(
+            func.body[0],
+            Stmt::VarDecl { name: "a".to_string(), init: Some(Expr::Num(5)) }
+        );
     }
 }

@@ -35,9 +35,10 @@ fn main() {
 
     let mut parser = Parser::new(tokens, &reporter);
     let func = parser.parse();
+    let locals: Vec<String> = parser.get_locals().to_vec();
 
     let mut codegen = Codegen::new();
-    let output = codegen.generate(&func);
+    let output = codegen.generate(&func, &locals);
 
     print!("{}", output);
 }

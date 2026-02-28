@@ -66,6 +66,11 @@ assert 0 'int main() { return 1>=2; }'
 assert 1 'int main() { return 5+1==6; }'
 assert 1 'int main() { return 3*2>=5; }'
 
+# Step 2.2: local variables (single character)
+assert 3 'int main() { int a; a = 3; return a; }'
+assert 8 'int main() { int a; int b; a = 3; b = 5; return a + b; }'
+assert 14 'int main() { int a; int b; a = 3; b = 5; return a * b - 1; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
