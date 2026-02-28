@@ -1006,6 +1006,11 @@ impl<'a> Parser<'a> {
     //      | expr ";"
     fn stmt(&mut self) -> Stmt {
         match &self.current().kind {
+            // Empty statement: just a semicolon
+            TokenKind::Semicolon => {
+                self.advance();
+                Stmt::Block(vec![])
+            }
             TokenKind::Return => {
                 self.advance();
                 if self.current().kind == TokenKind::Semicolon {
