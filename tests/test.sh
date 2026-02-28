@@ -872,6 +872,10 @@ assert 3 'int main() { int a[2]; a[0] = 3; a[1] = 5; int *p = a; return (*p)++; 
 assert 4 'int main() { int a[2]; a[0] = 3; a[1] = 5; int *p = a; (*p)++; return *p; }'
 assert 42 'struct Node; typedef struct Node Node; struct Node { int val; Node *next; }; extern void *malloc(unsigned long); int main() { Node *a = (Node *)malloc(sizeof(Node)); Node *b = (Node *)malloc(sizeof(Node)); a->val = 10; a->next = b; b->val = 42; b->next = 0; return a->next->val; }'
 
+# Step 14.30: Function pointer call through any expression
+assert 15 'int add(int a, int b) { return a+b; } typedef int (*BinOp)(int, int); int main() { BinOp ops[2]; ops[0] = add; return ops[0](10, 5); }'
+assert 70 'int add(int a, int b) { return a+b; } int sub(int a, int b) { return a-b; } int mul(int a, int b) { return a*b; } typedef int (*BinOp)(int, int); int main() { BinOp ops[3]; ops[0] = add; ops[1] = sub; ops[2] = mul; return ops[0](10,5) + ops[1](10,5) + ops[2](10,5); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

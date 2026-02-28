@@ -20,6 +20,8 @@ pub struct Parser<'a> {
     typedef_struct_tags: HashMap<String, String>,
     /// Last struct/union tag name parsed by parse_struct_or_union
     last_struct_tag: Option<String>,
+    /// Tags of forward-declared (empty) structs, for tracking which tag an empty struct came from
+    forward_declared_tags: std::collections::HashSet<String>,
     extern_names: std::collections::HashSet<String>,
 }
 
@@ -53,6 +55,7 @@ impl<'a> Parser<'a> {
             typedefs,
             typedef_struct_tags: HashMap::new(),
             last_struct_tag: None,
+            forward_declared_tags: std::collections::HashSet::new(),
             extern_names: std::collections::HashSet::new(),
         }
     }
@@ -608,8 +611,11 @@ impl<'a> Parser<'a> {
             // Register tag if present
             if let Some(ref tag) = tag_name {
                 self.struct_tags.insert(tag.clone(), ty.clone());
-                // Update typedefs that reference this specific struct tag
-                self.update_typedefs_for_tag(tag, &ty);
+                // If this tag was forward-declared, update all references to it
+                if self.forward_declared_tags.remove(tag) {
+                    self.update_typedefs_for_tag(tag, &ty);
+                    self.update_struct_members_with_struct(&ty);
+                }
             }
             ty
         } else if let Some(ref tag) = tag_name {
@@ -623,6 +629,7 @@ impl<'a> Parser<'a> {
                         is_unsigned: false,
                     };
                     self.struct_tags.insert(tag.clone(), ty.clone());
+                    self.forward_declared_tags.insert(tag.clone());
                     ty
                 }
             }
@@ -646,6 +653,58 @@ impl<'a> Parser<'a> {
             if let Some(updated) = Self::replace_empty_struct(&ty, full_ty) {
                 self.typedefs.insert(name, updated);
             }
+        }
+    }
+
+    /// Update struct members in all defined structs (both struct_tags and typedefs)
+    /// that reference a forward-declared struct.
+    fn update_struct_members_with_struct(&mut self, full_ty: &Type) {
+        // Update struct_tags
+        let keys: Vec<String> = self.struct_tags.keys().cloned().collect();
+        for key in keys {
+            let st = self.struct_tags.get(&key).unwrap().clone();
+            if let Some(updated) = Self::update_struct_type_members(&st, full_ty) {
+                self.struct_tags.insert(key, updated);
+            }
+        }
+        // Update typedefs (some structs are anonymous and only in typedefs)
+        let keys: Vec<String> = self.typedefs.keys().cloned().collect();
+        for key in keys {
+            let ty = self.typedefs.get(&key).unwrap().clone();
+            if let Some(updated) = Self::update_struct_type_members(&ty, full_ty) {
+                self.typedefs.insert(key, updated);
+            }
+        }
+    }
+
+    /// If the type is a struct, update its members that reference empty structs.
+    fn update_struct_type_members(ty: &Type, full_ty: &Type) -> Option<Type> {
+        match &ty.kind {
+            TypeKind::Struct(members) if !members.is_empty() => {
+                let mut updated_members = members.clone();
+                let mut changed = false;
+                for m in &mut updated_members {
+                    if let Some(new_ty) = Self::replace_empty_struct(&m.ty, full_ty) {
+                        m.ty = new_ty;
+                        changed = true;
+                    }
+                }
+                if changed {
+                    Some(Type {
+                        kind: TypeKind::Struct(updated_members),
+                        is_unsigned: ty.is_unsigned,
+                    })
+                } else {
+                    None
+                }
+            }
+            TypeKind::Ptr(base) => {
+                Self::update_struct_type_members(base, full_ty).map(|updated| Type {
+                    kind: TypeKind::Ptr(Box::new(updated)),
+                    is_unsigned: ty.is_unsigned,
+                })
+            }
+            _ => None,
         }
     }
 
@@ -2263,6 +2322,24 @@ impl<'a> Parser<'a> {
                             args,
                         };
                     }
+                }
+                TokenKind::LParen => {
+                    // Function pointer call through any expression: expr(args)
+                    // e.g., ops[0](10, 5), (*fp)(a, b)
+                    self.advance();
+                    let mut args = Vec::new();
+                    if self.current().kind != TokenKind::RParen {
+                        args.push(self.assign());
+                        while self.current().kind == TokenKind::Comma {
+                            self.advance();
+                            args.push(self.assign());
+                        }
+                    }
+                    self.expect(TokenKind::RParen);
+                    node = Expr::FuncPtrCall {
+                        fptr: Box::new(node),
+                        args,
+                    };
                 }
                 TokenKind::PlusPlus => {
                     self.advance();
