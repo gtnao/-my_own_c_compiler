@@ -48,6 +48,7 @@ impl<'a> Lexer<'a> {
                     "break" => TokenKind::Break,
                     "continue" => TokenKind::Continue,
                     "goto" => TokenKind::Goto,
+                    "sizeof" => TokenKind::Sizeof,
                     "void" => TokenKind::Void,
                     _ => TokenKind::Ident(word),
                 };

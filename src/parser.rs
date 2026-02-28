@@ -793,6 +793,13 @@ impl<'a> Parser<'a> {
                     operand: Box::new(operand),
                 }
             }
+            TokenKind::Sizeof => {
+                self.advance();
+                self.expect(TokenKind::LParen);
+                let ty = self.parse_type();
+                self.expect(TokenKind::RParen);
+                return Expr::SizeofType(ty);
+            }
             TokenKind::PlusPlus => {
                 self.advance();
                 let operand = self.unary();

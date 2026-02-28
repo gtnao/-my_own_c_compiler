@@ -20,6 +20,7 @@ pub enum TokenKind {
     Break,
     Continue,
     Goto,
+    Sizeof,
     // Operators
     Plus,
     PlusPlus,

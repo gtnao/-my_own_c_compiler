@@ -227,6 +227,12 @@ assert 0 'int main() { return (short)65536; }'
 assert 42 'int main() { return (int)42; }'
 assert 42 'int main() { return (long)42; }'
 
+# Step 4.6: sizeof operator
+assert 1 'int main() { return sizeof(char); }'
+assert 2 'int main() { return sizeof(short); }'
+assert 4 'int main() { return sizeof(int); }'
+assert 8 'int main() { return sizeof(long); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

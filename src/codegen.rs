@@ -453,6 +453,9 @@ impl Codegen {
                     self.stack_depth -= 1;
                 }
             }
+            Expr::SizeofType(ty) => {
+                self.emit(&format!("  mov ${}, %rax", ty.size()));
+            }
             Expr::Cast { ty, expr } => {
                 self.gen_expr(expr);
                 // Truncate and re-extend to target type
