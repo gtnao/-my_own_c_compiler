@@ -485,6 +485,38 @@ impl<'a> Parser<'a> {
                     // Store as pointer to void (function pointer simplified)
                     mem_ty = Type::ptr_to(Type::void());
                     name
+                } else if self.current().kind == TokenKind::Semicolon {
+                    // Anonymous struct/union member: no name, inline members
+                    if let TypeKind::Struct(inner_members) = &mem_ty.kind {
+                        // Flatten inner members into the parent struct
+                        for inner in inner_members {
+                            let member_offset = if is_union {
+                                inner.offset
+                            } else {
+                                let align = inner.ty.align();
+                                offset = (offset + align - 1) & !(align - 1);
+                                let o = offset + inner.offset;
+                                o
+                            };
+                            members.push(StructMember {
+                                name: inner.name.clone(),
+                                ty: inner.ty.clone(),
+                                offset: member_offset,
+                                bit_width: inner.bit_width,
+                                bit_offset: inner.bit_offset,
+                            });
+                        }
+                        if !is_union {
+                            offset += mem_ty.size();
+                        }
+                        self.expect(TokenKind::Semicolon);
+                        continue;
+                    }
+                    // Not a struct/union — treat as error
+                    self.reporter.error_at(
+                        self.current().pos,
+                        "expected member name",
+                    );
                 } else {
                     match &self.current().kind {
                         TokenKind::Ident(s) => {
@@ -948,7 +980,32 @@ impl<'a> Parser<'a> {
 
         // Parse parameter list: (type ident ("," type ident)* ("," "...")?)?
         let mut is_variadic = false;
+        let mut is_kr_style = false;
         if self.current().kind != TokenKind::RParen {
+            // Detect K&R style: first token is an identifier that is NOT a type name
+            if let TokenKind::Ident(ref _first_name) = self.current().kind {
+                if !self.is_type_start(&self.current().kind.clone()) {
+                    // K&R style parameter list: (a, b, c)
+                    is_kr_style = true;
+                    loop {
+                        let pname = match &self.current().kind {
+                            TokenKind::Ident(s) => s.clone(),
+                            _ => break,
+                        };
+                        self.advance();
+                        // Default K&R params to int
+                        let param_ty = Type::int_type();
+                        let unique = self.declare_var(&pname, param_ty.clone());
+                        params.push((param_ty, unique));
+                        if self.current().kind != TokenKind::Comma {
+                            break;
+                        }
+                        self.advance();
+                    }
+                }
+            }
+        }
+        if !is_kr_style && self.current().kind != TokenKind::RParen {
             loop {
                 // Check for ... (variadic)
                 if self.current().kind == TokenKind::Ellipsis {
@@ -1038,6 +1095,44 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::RParen);
         // Skip __attribute__ after parameter list
         self.skip_attribute();
+
+        // K&R style parameter declarations: int add(a, b) int a; int b; { ... }
+        // Detected when params have default int type and next token is a type keyword
+        if !params.is_empty() && self.current().kind != TokenKind::LBrace
+            && self.current().kind != TokenKind::Semicolon
+            && self.is_type_start(&self.current().kind.clone())
+        {
+            // Read K&R parameter type declarations until '{'
+            while self.current().kind != TokenKind::LBrace {
+                let kr_ty = self.parse_type();
+                // Parse declarator names (may be comma-separated)
+                loop {
+                    if let TokenKind::Ident(pname) = &self.current().kind {
+                        let pname = pname.clone();
+                        self.advance();
+                        // Update the matching parameter's type
+                        for (pty, uname) in params.iter_mut() {
+                            // Match by original name (unique name starts with original)
+                            let orig = uname.split('.').next().unwrap_or(uname);
+                            if orig == pname {
+                                *pty = kr_ty.clone();
+                                // Update local variable type
+                                if let Some(local) = self.locals.iter_mut().find(|l| l.1 == *uname) {
+                                    local.0 = kr_ty.clone();
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if self.current().kind == TokenKind::Comma {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                self.expect(TokenKind::Semicolon);
+            }
+        }
 
         // Forward declaration (prototype): ends with ";"
         if self.current().kind == TokenKind::Semicolon {

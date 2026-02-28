@@ -985,6 +985,15 @@ assert 20 'int main() { int arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; int (*p)[3]
 assert 13 'int add(int a, int b){return a+b;} int sub(int a, int b){return a-b;} int main() { int (*ops[2])(int,int); ops[0]=add; ops[1]=sub; return ops[0](10,3); }'
 assert 7 'int add(int a, int b){return a+b;} int sub(int a, int b){return a-b;} int main() { int (*ops[2])(int,int); ops[0]=add; ops[1]=sub; return ops[1](10,3); }'
 
+# Step 15.4: K&R style function declarations
+assert 7 'int add(a, b) int a; int b; { return a+b; } int main() { return add(3, 4); }'
+assert 6 'int mul(x, y) int x; int y; { return x*y; } int main() { return mul(2, 3); }'
+
+# Step 15.5: Anonymous struct/union members
+assert 42 'int main() { struct { union { int a; long b; }; int c; } s; s.a = 42; s.c = 10; return s.a; }'
+assert 10 'int main() { struct { union { int a; long b; }; int c; } s; s.a = 42; s.c = 10; return s.c; }'
+assert 99 'int main() { struct { struct { int x; int y; }; int z; } s; s.x = 99; s.z = 1; return s.x; }'
+
 # Cross-header inclusion test
 assert 0 '#include <stdio.h>
 #include <stdlib.h>
