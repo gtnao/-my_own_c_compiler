@@ -2140,7 +2140,7 @@ impl<'a> Parser<'a> {
                 // Cast expression or compound literal: "(" type ")" ...
                 if self.current().kind == TokenKind::LParen
                     && self.pos + 1 < self.tokens.len()
-                    && Self::is_type_keyword(&self.tokens[self.pos + 1].kind)
+                    && self.is_type_start(&self.tokens[self.pos + 1].kind)
                 {
                     self.advance(); // consume "("
                     let mut ty = self.parse_type();
