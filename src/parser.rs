@@ -241,14 +241,65 @@ impl<'a> Parser<'a> {
         node
     }
 
-    // logical_and = equality ("&&" equality)*
+    // logical_and = bitwise_or ("&&" bitwise_or)*
     fn logical_and(&mut self) -> Expr {
-        let mut node = self.equality();
+        let mut node = self.bitwise_or();
 
         while self.current().kind == TokenKind::AmpAmp {
             self.advance();
-            let rhs = self.equality();
+            let rhs = self.bitwise_or();
             node = Expr::LogicalAnd(Box::new(node), Box::new(rhs));
+        }
+
+        node
+    }
+
+    // bitwise_or = bitwise_xor ("|" bitwise_xor)*
+    fn bitwise_or(&mut self) -> Expr {
+        let mut node = self.bitwise_xor();
+
+        while self.current().kind == TokenKind::Pipe {
+            self.advance();
+            let rhs = self.bitwise_xor();
+            node = Expr::BinOp {
+                op: BinOp::BitOr,
+                lhs: Box::new(node),
+                rhs: Box::new(rhs),
+            };
+        }
+
+        node
+    }
+
+    // bitwise_xor = bitwise_and ("^" bitwise_and)*
+    fn bitwise_xor(&mut self) -> Expr {
+        let mut node = self.bitwise_and();
+
+        while self.current().kind == TokenKind::Caret {
+            self.advance();
+            let rhs = self.bitwise_and();
+            node = Expr::BinOp {
+                op: BinOp::BitXor,
+                lhs: Box::new(node),
+                rhs: Box::new(rhs),
+            };
+        }
+
+        node
+    }
+
+    // bitwise_and = equality ("&" equality)*
+    fn bitwise_and(&mut self) -> Expr {
+        let mut node = self.equality();
+
+        while self.current().kind == TokenKind::Amp {
+            self.advance();
+            let rhs = self.equality();
+            node = Expr::BinOp {
+                op: BinOp::BitAnd,
+                lhs: Box::new(node),
+                rhs: Box::new(rhs),
+            };
         }
 
         node
@@ -285,15 +336,15 @@ impl<'a> Parser<'a> {
         node
     }
 
-    // relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+    // relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
     fn relational(&mut self) -> Expr {
-        let mut node = self.add();
+        let mut node = self.shift();
 
         loop {
             match self.current().kind {
                 TokenKind::Lt => {
                     self.advance();
-                    let rhs = self.add();
+                    let rhs = self.shift();
                     node = Expr::BinOp {
                         op: BinOp::Lt,
                         lhs: Box::new(node),
@@ -302,7 +353,7 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::Le => {
                     self.advance();
-                    let rhs = self.add();
+                    let rhs = self.shift();
                     node = Expr::BinOp {
                         op: BinOp::Le,
                         lhs: Box::new(node),
@@ -311,7 +362,7 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::Gt => {
                     self.advance();
-                    let rhs = self.add();
+                    let rhs = self.shift();
                     node = Expr::BinOp {
                         op: BinOp::Gt,
                         lhs: Box::new(node),
@@ -320,9 +371,40 @@ impl<'a> Parser<'a> {
                 }
                 TokenKind::Ge => {
                     self.advance();
-                    let rhs = self.add();
+                    let rhs = self.shift();
                     node = Expr::BinOp {
                         op: BinOp::Ge,
+                        lhs: Box::new(node),
+                        rhs: Box::new(rhs),
+                    };
+                }
+                _ => break,
+            }
+        }
+
+        node
+    }
+
+    // shift = add ("<<" add | ">>" add)*
+    fn shift(&mut self) -> Expr {
+        let mut node = self.add();
+
+        loop {
+            match self.current().kind {
+                TokenKind::LShift => {
+                    self.advance();
+                    let rhs = self.add();
+                    node = Expr::BinOp {
+                        op: BinOp::Shl,
+                        lhs: Box::new(node),
+                        rhs: Box::new(rhs),
+                    };
+                }
+                TokenKind::RShift => {
+                    self.advance();
+                    let rhs = self.add();
+                    node = Expr::BinOp {
+                        op: BinOp::Shr,
                         lhs: Box::new(node),
                         rhs: Box::new(rhs),
                     };
@@ -425,6 +507,14 @@ impl<'a> Parser<'a> {
                 let operand = self.unary();
                 Expr::UnaryOp {
                     op: UnaryOp::LogicalNot,
+                    operand: Box::new(operand),
+                }
+            }
+            TokenKind::Tilde => {
+                self.advance();
+                let operand = self.unary();
+                Expr::UnaryOp {
+                    op: UnaryOp::BitNot,
                     operand: Box::new(operand),
                 }
             }

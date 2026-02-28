@@ -127,6 +127,17 @@ assert 0 'int main() { return !42; }'
 assert 1 'int main() { return 2 && 3; }'
 assert 1 'int main() { return 2 || 0; }'
 
+# Step 2.12: bitwise operators
+assert 1 'int main() { return 3 & 1; }'
+assert 3 'int main() { return 1 | 2; }'
+assert 3 'int main() { return 1 ^ 2; }'
+assert 0 'int main() { return 3 ^ 3; }'
+assert 8 'int main() { return 1 << 3; }'
+assert 2 'int main() { return 8 >> 2; }'
+assert 5 'int main() { return 7 & 5; }'
+assert 7 'int main() { return 5 | 3; }'
+assert 253 'int main() { int a = 2; return ~a & 255; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

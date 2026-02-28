@@ -159,6 +159,9 @@ impl Codegen {
                         self.emit("  sete %al");
                         self.emit("  movzb %al, %rax");
                     }
+                    UnaryOp::BitNot => {
+                        self.emit("  not %rax");
+                    }
                 }
             }
             Expr::LogicalAnd(lhs, rhs) => {
@@ -288,6 +291,23 @@ impl Codegen {
                         self.emit("  cmp %rdi, %rax");
                         self.emit("  setge %al");
                         self.emit("  movzb %al, %rax");
+                    }
+                    BinOp::BitAnd => {
+                        self.emit("  and %rdi, %rax");
+                    }
+                    BinOp::BitOr => {
+                        self.emit("  or %rdi, %rax");
+                    }
+                    BinOp::BitXor => {
+                        self.emit("  xor %rdi, %rax");
+                    }
+                    BinOp::Shl => {
+                        self.emit("  mov %rdi, %rcx");
+                        self.emit("  sal %cl, %rax");
+                    }
+                    BinOp::Shr => {
+                        self.emit("  mov %rdi, %rcx");
+                        self.emit("  sar %cl, %rax");
                     }
                 }
             }
