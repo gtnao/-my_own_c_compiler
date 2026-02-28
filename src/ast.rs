@@ -30,6 +30,7 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Num(i64),
+    FloatLit(f64),
     Var(String),
     Assign {
         lhs: Box<Expr>,

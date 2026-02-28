@@ -209,6 +209,13 @@ impl Codegen {
                     // Array params treated as pointers (8 bytes)
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
+                TypeKind::Float => {
+                    // Float args passed in integer registers (simplified ABI)
+                    self.emit(&format!("  movl {}, -{}(%rbp)", arg_regs_32[i], offset));
+                }
+                TypeKind::Double => {
+                    self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
+                }
                 TypeKind::Struct(_) => {
                     // Struct pass-by-value: register holds pointer to caller's struct,
                     // copy the struct data into local stack space
@@ -407,7 +414,15 @@ impl Codegen {
             }
             Stmt::VarDecl { name, ty: _, init } => {
                 if let Some(expr) = init {
+                    let var_ty = self.get_var_type(name);
+                    let expr_ty = self.expr_type(expr);
                     self.gen_expr(expr);
+                    // Type conversion for float/int mismatch
+                    let var_is_float = Self::is_float_type(&var_ty);
+                    let expr_is_float = Self::is_float_type(&expr_ty);
+                    if var_is_float != expr_is_float || (var_is_float && expr_is_float && var_ty.kind != expr_ty.kind) {
+                        self.emit_type_convert(&expr_ty, &var_ty);
+                    }
                     self.emit_store_var(name);
                 }
             }
@@ -418,6 +433,12 @@ impl Codegen {
         match expr {
             Expr::Num(val) => {
                 self.emit(&format!("  mov ${}, %rax", val));
+            }
+            Expr::FloatLit(val) => {
+                // Load double literal via integer register
+                let bits = val.to_bits();
+                self.emit(&format!("  movabs ${}, %rax", bits as i64));
+                self.emit("  movq %rax, %xmm0");
             }
             Expr::Var(name) => {
                 self.emit_load_var(name);
@@ -472,18 +493,41 @@ impl Codegen {
                         // Store back
                         self.emit_store_indirect(&ty);
                     } else {
+                        let rhs_ty = self.expr_type(rhs);
                         self.gen_expr(rhs);
+                        // Type conversion between int and float
+                        let lhs_is_float = Self::is_float_type(&lhs_ty);
+                        let rhs_is_float = Self::is_float_type(&rhs_ty);
+                        if lhs_is_float && !rhs_is_float {
+                            // int -> float/double: convert %rax to %xmm0
+                            self.emit_type_convert(&rhs_ty, &lhs_ty);
+                        } else if !lhs_is_float && rhs_is_float {
+                            // float/double -> int: convert %xmm0 to %rax
+                            self.emit_type_convert(&rhs_ty, &lhs_ty);
+                        } else if lhs_is_float && rhs_is_float {
+                            // float <-> double conversion
+                            self.emit_type_convert(&rhs_ty, &lhs_ty);
+                        }
                         match lhs.as_ref() {
                             Expr::Var(name) => {
                                 self.emit_store_var(name);
                             }
                             Expr::Deref(_) | Expr::Member(_, _) => {
-                                self.push(); // save rhs value
-                                self.gen_addr(lhs);
-                                self.emit("  mov %rax, %rdi"); // address in %rdi
-                                self.pop("%rax"); // value in %rax
-                                let ty = self.expr_type(lhs);
-                                self.emit_store_indirect(&ty);
+                                if lhs_is_float {
+                                    self.push_float();
+                                    self.gen_addr(lhs);
+                                    self.emit("  mov %rax, %rdi");
+                                    self.pop_float("%xmm0");
+                                    let ty = self.expr_type(lhs);
+                                    self.emit_store_indirect(&ty);
+                                } else {
+                                    self.push(); // save rhs value
+                                    self.gen_addr(lhs);
+                                    self.emit("  mov %rax, %rdi"); // address in %rdi
+                                    self.pop("%rax"); // value in %rax
+                                    let ty = self.expr_type(lhs);
+                                    self.emit_store_indirect(&ty);
+                                }
                             }
                             _ => {}
                         }
@@ -684,21 +728,46 @@ impl Codegen {
                 self.emit(&format!("  lea .LC{}(%rip), %rax", idx));
             }
             Expr::Cast { ty, expr } => {
+                let src_ty = self.expr_type(expr);
                 self.gen_expr(expr);
-                // Truncate and re-extend to target type
-                match ty.kind {
-                    TypeKind::Bool => {
-                        self.emit("  cmp $0, %rax");
-                        self.emit("  setne %al");
-                        self.emit("  movzbl %al, %eax");
+                // Handle float/int conversions
+                let src_float = Self::is_float_type(&src_ty);
+                let dst_float = Self::is_float_type(ty);
+                if src_float || dst_float {
+                    self.emit_type_convert(&src_ty, ty);
+                    // If converting float to int, also apply integer truncation
+                    if src_float && !dst_float {
+                        match ty.kind {
+                            TypeKind::Bool => {
+                                self.emit("  cmp $0, %rax");
+                                self.emit("  setne %al");
+                                self.emit("  movzbl %al, %eax");
+                            }
+                            TypeKind::Char if ty.is_unsigned => self.emit("  movzbl %al, %eax"),
+                            TypeKind::Char => self.emit("  movsbq %al, %rax"),
+                            TypeKind::Short if ty.is_unsigned => self.emit("  movzwl %ax, %eax"),
+                            TypeKind::Short => self.emit("  movswq %ax, %rax"),
+                            TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
+                            TypeKind::Int => self.emit("  movslq %eax, %rax"),
+                            _ => {}
+                        }
                     }
-                    TypeKind::Char if ty.is_unsigned => self.emit("  movzbl %al, %eax"),
-                    TypeKind::Char => self.emit("  movsbq %al, %rax"),
-                    TypeKind::Short if ty.is_unsigned => self.emit("  movzwl %ax, %eax"),
-                    TypeKind::Short => self.emit("  movswq %ax, %rax"),
-                    TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
-                    TypeKind::Int => self.emit("  movslq %eax, %rax"),
-                    TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) | TypeKind::Struct(_) => {} // no-op
+                } else {
+                    // Integer-to-integer cast (existing code)
+                    match ty.kind {
+                        TypeKind::Bool => {
+                            self.emit("  cmp $0, %rax");
+                            self.emit("  setne %al");
+                            self.emit("  movzbl %al, %eax");
+                        }
+                        TypeKind::Char if ty.is_unsigned => self.emit("  movzbl %al, %eax"),
+                        TypeKind::Char => self.emit("  movsbq %al, %rax"),
+                        TypeKind::Short if ty.is_unsigned => self.emit("  movzwl %ax, %eax"),
+                        TypeKind::Short => self.emit("  movswq %ax, %rax"),
+                        TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
+                        TypeKind::Int => self.emit("  movslq %eax, %rax"),
+                        TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) | TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Float | TypeKind::Double => {}
+                    }
                 }
             }
             Expr::VaStart { ap, last_param: _ } => {
@@ -757,6 +826,14 @@ impl Codegen {
                 self.pop("%rax"); // restore loaded value
             }
             Expr::BinOp { op, lhs, rhs } => {
+                // Check if this is a float/double operation
+                let lhs_ty = self.expr_type(lhs);
+                let rhs_ty = self.expr_type(rhs);
+                if Self::is_float_type(&lhs_ty) || Self::is_float_type(&rhs_ty) {
+                    self.gen_float_binop(op, lhs, rhs);
+                    return;
+                }
+
                 self.gen_expr(rhs);
                 self.push();
                 self.gen_expr(lhs);
@@ -905,6 +982,7 @@ impl Codegen {
     /// Infer the type of an expression (best effort).
     fn expr_type(&self, expr: &Expr) -> Type {
         match expr {
+            Expr::FloatLit(_) => Type::double_type(),
             Expr::Var(name) => self.get_var_type(name),
             Expr::Deref(inner) => {
                 let inner_ty = self.expr_type(inner);
@@ -931,6 +1009,20 @@ impl Codegen {
             Expr::BinOp { op, lhs, rhs } => {
                 let lhs_ty = self.expr_type(lhs);
                 let rhs_ty = self.expr_type(rhs);
+                // Comparison operators always return int
+                match op {
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                        return Type::int_type();
+                    }
+                    _ => {}
+                }
+                // Float/double type promotion
+                if Self::is_float_type(&lhs_ty) || Self::is_float_type(&rhs_ty) {
+                    if matches!(lhs_ty.kind, TypeKind::Double) || matches!(rhs_ty.kind, TypeKind::Double) {
+                        return Type::double_type();
+                    }
+                    return Type::float_type();
+                }
                 match op {
                     BinOp::Add => {
                         if lhs_ty.is_pointer() {
@@ -1017,20 +1109,33 @@ impl Codegen {
             TypeKind::Short => self.emit("  movswq (%rax), %rax"),
             TypeKind::Int if ty.is_unsigned => self.emit("  movl (%rax), %eax"),
             TypeKind::Int => self.emit("  movslq (%rax), %rax"),
+            TypeKind::Float => {
+                self.emit("  movss (%rax), %xmm0");
+            }
+            TypeKind::Double => {
+                self.emit("  movsd (%rax), %xmm0");
+            }
             TypeKind::Array(_, _) => {} // array-to-pointer decay: address is the value
             _ => self.emit("  mov (%rax), %rax"), // long, ptr
         }
     }
 
     /// Store %rax to the address in %rdi, based on the given type.
+    /// For float/double, stores from %xmm0.
     fn emit_store_indirect(&mut self, ty: &Type) {
         if let TypeKind::Struct(_) = &ty.kind {
-            // Struct copy: %rax = src address, %rdi = dst address
-            // Use rep movsb to copy struct bytes
             self.emit("  mov %rax, %rsi"); // src
             let size = ty.size();
             self.emit(&format!("  mov ${}, %rcx", size));
             self.emit("  rep movsb");
+            return;
+        }
+        if matches!(ty.kind, TypeKind::Float) {
+            self.emit("  movss %xmm0, (%rdi)");
+            return;
+        }
+        if matches!(ty.kind, TypeKind::Double) {
+            self.emit("  movsd %xmm0, (%rdi)");
             return;
         }
         if ty.kind == TypeKind::Bool {
@@ -1083,8 +1188,9 @@ impl Codegen {
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl {}(%rip), %eax", name)),
                 TypeKind::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov {}(%rip), %rax", name)),
+                TypeKind::Float => self.emit(&format!("  movss {}(%rip), %xmm0", name)),
+                TypeKind::Double => self.emit(&format!("  movsd {}(%rip), %xmm0", name)),
                 TypeKind::Array(_, _) | TypeKind::Struct(_) => {
-                    // Array-to-pointer decay / struct address: load address
                     self.emit(&format!("  lea {}(%rip), %rax", name));
                 }
                 TypeKind::Void => {}
@@ -1100,8 +1206,9 @@ impl Codegen {
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl -{}(%rbp), %eax", offset)),
                 TypeKind::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
+                TypeKind::Float => self.emit(&format!("  movss -{}(%rbp), %xmm0", offset)),
+                TypeKind::Double => self.emit(&format!("  movsd -{}(%rbp), %xmm0", offset)),
                 TypeKind::Array(_, _) | TypeKind::Struct(_) => {
-                    // Array-to-pointer decay / struct address: load address
                     self.emit(&format!("  lea -{}(%rbp), %rax", offset));
                 }
                 TypeKind::Void => {}
@@ -1125,8 +1232,26 @@ impl Codegen {
             self.emit("  rep movsb");
             return;
         }
+        // Float/double: store from %xmm0
+        if matches!(ty.kind, TypeKind::Float) {
+            if self.globals.contains(name) {
+                self.emit(&format!("  movss %xmm0, {}(%rip)", name));
+            } else {
+                let offset = self.locals[name];
+                self.emit(&format!("  movss %xmm0, -{}(%rbp)", offset));
+            }
+            return;
+        }
+        if matches!(ty.kind, TypeKind::Double) {
+            if self.globals.contains(name) {
+                self.emit(&format!("  movsd %xmm0, {}(%rip)", name));
+            } else {
+                let offset = self.locals[name];
+                self.emit(&format!("  movsd %xmm0, -{}(%rbp)", offset));
+            }
+            return;
+        }
         if ty.kind == TypeKind::Bool {
-            // Normalize to 0/1: cmp $0, %rax; setne %al
             self.emit("  cmp $0, %rax");
             self.emit("  setne %al");
         }
@@ -1136,7 +1261,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, {}(%rip)", name)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         } else {
             let offset = self.locals[name];
@@ -1145,7 +1270,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         }
     }
@@ -1153,7 +1278,6 @@ impl Codegen {
     fn emit_store_var_from_rdi(&mut self, name: &str) {
         let ty = self.get_var_type(name);
         if ty.kind == TypeKind::Bool {
-            // Normalize to 0/1
             self.emit("  cmp $0, %rdi");
             self.emit("  setne %dil");
         }
@@ -1163,7 +1287,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         } else {
             let offset = self.locals[name];
@@ -1172,7 +1296,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
                 TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
-                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void => {}
+                TypeKind::Array(_, _) | TypeKind::Struct(_) | TypeKind::Void | TypeKind::Float | TypeKind::Double => {}
             }
         }
     }
@@ -1187,9 +1311,124 @@ impl Codegen {
         self.stack_depth -= 1;
     }
 
+    fn push_float(&mut self) {
+        self.emit("  sub $8, %rsp");
+        self.emit("  movsd %xmm0, (%rsp)");
+        self.stack_depth += 1;
+    }
+
+    fn pop_float(&mut self, reg: &str) {
+        self.emit(&format!("  movsd (%rsp), {}", reg));
+        self.emit("  add $8, %rsp");
+        self.stack_depth -= 1;
+    }
+
     fn emit(&mut self, s: &str) {
         self.output.push_str(s);
         self.output.push('\n');
+    }
+
+    /// Check if a type is floating-point.
+    fn is_float_type(ty: &Type) -> bool {
+        matches!(ty.kind, TypeKind::Float | TypeKind::Double)
+    }
+
+    /// Emit conversion instructions from src type to dst type.
+    /// Assumes src result is in the appropriate register (%rax for int, %xmm0 for float).
+    fn emit_type_convert(&mut self, src: &Type, dst: &Type) {
+        let src_float = Self::is_float_type(src);
+        let dst_float = Self::is_float_type(dst);
+
+        if src_float && dst_float {
+            // float <-> double
+            if matches!(src.kind, TypeKind::Float) && matches!(dst.kind, TypeKind::Double) {
+                self.emit("  cvtss2sd %xmm0, %xmm0");
+            } else if matches!(src.kind, TypeKind::Double) && matches!(dst.kind, TypeKind::Float) {
+                self.emit("  cvtsd2ss %xmm0, %xmm0");
+            }
+        } else if !src_float && dst_float {
+            // int -> float/double
+            match dst.kind {
+                TypeKind::Float => self.emit("  cvtsi2ss %rax, %xmm0"),
+                TypeKind::Double => self.emit("  cvtsi2sd %rax, %xmm0"),
+                _ => {}
+            }
+        } else if src_float && !dst_float {
+            // float/double -> int (truncate toward zero, as C requires)
+            match src.kind {
+                TypeKind::Float => self.emit("  cvttss2si %xmm0, %rax"),
+                TypeKind::Double => self.emit("  cvttsd2si %xmm0, %rax"),
+                _ => {}
+            }
+        }
+    }
+
+    /// Generate code for a float/double binary operation.
+    fn gen_float_binop(&mut self, op: &BinOp, lhs: &Expr, rhs: &Expr) {
+        let lhs_ty = self.expr_type(lhs);
+        let rhs_ty = self.expr_type(rhs);
+        // Use double precision if either side is double
+        let is_double = matches!(lhs_ty.kind, TypeKind::Double) || matches!(rhs_ty.kind, TypeKind::Double);
+
+        // Evaluate rhs, convert to float if needed
+        self.gen_expr(rhs);
+        if !Self::is_float_type(&rhs_ty) {
+            if is_double {
+                self.emit("  cvtsi2sd %rax, %xmm0");
+            } else {
+                self.emit("  cvtsi2ss %rax, %xmm0");
+            }
+        } else if is_double && matches!(rhs_ty.kind, TypeKind::Float) {
+            self.emit("  cvtss2sd %xmm0, %xmm0");
+        }
+        self.push_float(); // save rhs on stack
+
+        // Evaluate lhs, convert to float if needed
+        self.gen_expr(lhs);
+        if !Self::is_float_type(&lhs_ty) {
+            if is_double {
+                self.emit("  cvtsi2sd %rax, %xmm0");
+            } else {
+                self.emit("  cvtsi2ss %rax, %xmm0");
+            }
+        } else if is_double && matches!(lhs_ty.kind, TypeKind::Float) {
+            self.emit("  cvtss2sd %xmm0, %xmm0");
+        }
+
+        self.pop_float("%xmm1"); // rhs in %xmm1, lhs in %xmm0
+
+        let suffix = if is_double { "sd" } else { "ss" };
+
+        match op {
+            BinOp::Add => self.emit(&format!("  add{} %xmm1, %xmm0", suffix)),
+            BinOp::Sub => self.emit(&format!("  sub{} %xmm1, %xmm0", suffix)),
+            BinOp::Mul => self.emit(&format!("  mul{} %xmm1, %xmm0", suffix)),
+            BinOp::Div => self.emit(&format!("  div{} %xmm1, %xmm0", suffix)),
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                self.emit(&format!("  ucomi{} %xmm1, %xmm0", suffix));
+                match op {
+                    BinOp::Eq => {
+                        self.emit("  sete %al");
+                        self.emit("  setnp %cl");
+                        self.emit("  and %cl, %al");
+                    }
+                    BinOp::Ne => {
+                        self.emit("  setne %al");
+                        self.emit("  setp %cl");
+                        self.emit("  or %cl, %al");
+                    }
+                    BinOp::Lt => self.emit("  setb %al"),
+                    BinOp::Le => self.emit("  setbe %al"),
+                    BinOp::Gt => self.emit("  seta %al"),
+                    BinOp::Ge => self.emit("  setae %al"),
+                    _ => {}
+                }
+                self.emit("  movzb %al, %rax");
+                // Result is in %rax (integer), not %xmm0
+                return;
+            }
+            _ => {} // bitwise ops not applicable to float
+        }
     }
 }
 

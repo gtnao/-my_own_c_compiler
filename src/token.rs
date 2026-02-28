@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Num(i64),
+    FloatNum(f64),
     Ident(String),
     Str(Vec<u8>),
     // Keywords
@@ -32,6 +33,8 @@ pub enum TokenKind {
     Extern,
     Const,
     Volatile,
+    FloatKw,
+    DoubleKw,
     Alignof,
     Alignas,
     Generic,

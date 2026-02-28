@@ -80,6 +80,8 @@ impl<'a> Lexer<'a> {
                     "void" => TokenKind::Void,
                     "const" => TokenKind::Const,
                     "volatile" => TokenKind::Volatile,
+                    "float" => TokenKind::FloatKw,
+                    "double" => TokenKind::DoubleKw,
                     "_Bool" => TokenKind::Bool,
                     "_Alignof" => TokenKind::Alignof,
                     "_Alignas" => TokenKind::Alignas,
@@ -112,13 +114,20 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if ch.is_ascii_digit() {
+            if ch.is_ascii_digit() || (ch == '.' && self.peek_next().is_some_and(|c| c.is_ascii_digit())) {
                 let pos = self.pos;
-                let val = self.read_number();
-                tokens.push(Token {
-                    kind: TokenKind::Num(val),
-                    pos,
-                });
+                let (is_float, int_val, float_val) = self.read_number_or_float();
+                if is_float {
+                    tokens.push(Token {
+                        kind: TokenKind::FloatNum(float_val),
+                        pos,
+                    });
+                } else {
+                    tokens.push(Token {
+                        kind: TokenKind::Num(int_val),
+                        pos,
+                    });
+                }
                 continue;
             }
 
@@ -400,13 +409,76 @@ impl<'a> Lexer<'a> {
         s
     }
 
-    fn read_number(&mut self) -> i64 {
+    /// Read a number (integer or float). Returns (is_float, int_value, float_value).
+    fn read_number_or_float(&mut self) -> (bool, i64, f64) {
         let start = self.pos;
+        let mut is_float = false;
+
+        // Check if starting with '.' (like .5)
+        if self.pos < self.input.len() && self.input[self.pos] == b'.' {
+            is_float = true;
+        }
+
+        // Read integer part
         while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_digit() {
             self.pos += 1;
         }
+
+        // Check for decimal point
+        if self.pos < self.input.len() && self.input[self.pos] == b'.' {
+            // Make sure it's not '...' (ellipsis)
+            if self.pos + 1 < self.input.len() && self.input[self.pos + 1] == b'.' {
+                // This is not a float, it's an integer followed by '..'
+                let s = std::str::from_utf8(&self.input[start..self.pos]).unwrap();
+                return (false, s.parse().unwrap(), 0.0);
+            }
+            is_float = true;
+            self.pos += 1; // consume '.'
+            while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_digit() {
+                self.pos += 1;
+            }
+        }
+
+        // Check for exponent
+        if self.pos < self.input.len() && (self.input[self.pos] == b'e' || self.input[self.pos] == b'E') {
+            is_float = true;
+            self.pos += 1;
+            if self.pos < self.input.len() && (self.input[self.pos] == b'+' || self.input[self.pos] == b'-') {
+                self.pos += 1;
+            }
+            while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_digit() {
+                self.pos += 1;
+            }
+        }
+
+        // Check for 'f'/'F' suffix (float literal)
+        if self.pos < self.input.len() && (self.input[self.pos] == b'f' || self.input[self.pos] == b'F') {
+            is_float = true;
+            self.pos += 1;
+        }
+
+        // Skip 'L'/'l'/'U'/'u' suffixes for integer literals
+        if !is_float {
+            while self.pos < self.input.len() {
+                let c = self.input[self.pos];
+                if c == b'L' || c == b'l' || c == b'U' || c == b'u' {
+                    self.pos += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
         let s = std::str::from_utf8(&self.input[start..self.pos]).unwrap();
-        s.parse().unwrap()
+        if is_float {
+            // Remove trailing 'f'/'F' for parsing
+            let num_str = s.trim_end_matches(|c| c == 'f' || c == 'F');
+            let val: f64 = num_str.parse().unwrap();
+            (true, 0, val)
+        } else {
+            let val: i64 = s.parse().unwrap_or(0);
+            (false, val, 0.0)
+        }
     }
 }
 

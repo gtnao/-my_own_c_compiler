@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -539,6 +539,14 @@ impl<'a> Parser<'a> {
                     self.advance();
                 }
                 if is_unsigned { Type::ulong() } else { Type::long_type() }
+            }
+            TokenKind::FloatKw => {
+                self.advance();
+                Type::float_type()
+            }
+            TokenKind::DoubleKw => {
+                self.advance();
+                Type::double_type()
             }
             TokenKind::Void => {
                 self.advance();
@@ -987,7 +995,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw => {
                 self.var_decl()
             }
             _ => {
@@ -1946,6 +1954,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Expr::Num(val)
             }
+            TokenKind::FloatNum(val) => {
+                self.advance();
+                Expr::FloatLit(val)
+            }
             TokenKind::Str(s) => {
                 self.advance();
                 // String concatenation: "hello" " " "world"
@@ -2293,6 +2305,7 @@ impl<'a> Parser<'a> {
     fn infer_type(&self, expr: &Expr) -> Type {
         match expr {
             Expr::Num(_) => Type::int_type(),
+            Expr::FloatLit(_) => Type::double_type(),
             Expr::StrLit(_) => Type::ptr_to(Type::char_type()),
             Expr::Var(name) => {
                 // Look up variable type from scopes
@@ -2339,6 +2352,8 @@ impl<'a> Parser<'a> {
             (TypeKind::Short, TypeKind::Short) => a.is_unsigned == b.is_unsigned,
             (TypeKind::Int, TypeKind::Int) => a.is_unsigned == b.is_unsigned,
             (TypeKind::Long, TypeKind::Long) => a.is_unsigned == b.is_unsigned,
+            (TypeKind::Float, TypeKind::Float) => true,
+            (TypeKind::Double, TypeKind::Double) => true,
             (TypeKind::Ptr(a_base), TypeKind::Ptr(b_base)) => self.types_match(a_base, b_base),
             (TypeKind::Array(a_base, _), TypeKind::Ptr(b_base)) => self.types_match(a_base, b_base),
             (TypeKind::Ptr(a_base), TypeKind::Array(b_base, _)) => self.types_match(a_base, b_base),

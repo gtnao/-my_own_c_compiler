@@ -20,6 +20,8 @@ pub enum TypeKind {
     Short,
     Int,
     Long,
+    Float,
+    Double,
     Ptr(Box<Type>),
     Array(Box<Type>, usize),
     Struct(Vec<StructMember>),
@@ -40,6 +42,8 @@ impl Type {
     pub fn short_type() -> Self { Self { kind: TypeKind::Short, is_unsigned: false } }
     pub fn int_type() -> Self { Self { kind: TypeKind::Int, is_unsigned: false } }
     pub fn long_type() -> Self { Self { kind: TypeKind::Long, is_unsigned: false } }
+    pub fn float_type() -> Self { Self { kind: TypeKind::Float, is_unsigned: false } }
+    pub fn double_type() -> Self { Self { kind: TypeKind::Double, is_unsigned: false } }
 
     // Pointer constructor
     pub fn ptr_to(base: Type) -> Self { Self { kind: TypeKind::Ptr(Box::new(base)), is_unsigned: false } }
@@ -67,6 +71,11 @@ impl Type {
         if a.size() >= b.size() { a } else { b }
     }
 
+    /// Returns true if this is a floating-point type (float or double).
+    pub fn is_float_type(&self) -> bool {
+        matches!(self.kind, TypeKind::Float | TypeKind::Double)
+    }
+
     /// Returns the size in bytes of this type.
     pub fn size(&self) -> usize {
         match &self.kind {
@@ -76,6 +85,8 @@ impl Type {
             TypeKind::Short => 2,
             TypeKind::Int => 4,
             TypeKind::Long => 8,
+            TypeKind::Float => 4,
+            TypeKind::Double => 8,
             TypeKind::Ptr(_) => 8,
             TypeKind::Array(base, len) => base.size() * len,
             TypeKind::Struct(members) => {
@@ -103,6 +114,8 @@ impl Type {
             TypeKind::Short => 2,
             TypeKind::Int => 4,
             TypeKind::Long => 8,
+            TypeKind::Float => 4,
+            TypeKind::Double => 8,
             TypeKind::Ptr(_) => 8,
             TypeKind::Array(base, _) => base.align(),
             TypeKind::Struct(members) => {
