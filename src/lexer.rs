@@ -77,9 +77,19 @@ impl<'a> Lexer<'a> {
                 tokens.push(Token { kind: TokenKind::Ge, pos });
                 continue;
             }
+            if ch == '+' && self.peek_next() == Some('+') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::PlusPlus, pos });
+                continue;
+            }
             if ch == '+' && self.peek_next() == Some('=') {
                 self.pos += 2;
                 tokens.push(Token { kind: TokenKind::PlusEq, pos });
+                continue;
+            }
+            if ch == '-' && self.peek_next() == Some('-') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::MinusMinus, pos });
                 continue;
             }
             if ch == '-' && self.peek_next() == Some('=') {

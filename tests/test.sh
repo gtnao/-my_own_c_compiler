@@ -104,6 +104,14 @@ assert 20 'int main() { int a = 10; a *= 2; return a; }'
 assert 5 'int main() { int a = 10; a /= 2; return a; }'
 assert 1 'int main() { int a = 10; a %= 3; return a; }'
 
+# Step 2.10: increment/decrement
+assert 6 'int main() { int a = 5; a++; return a; }'
+assert 5 'int main() { int a = 5; return a++; }'
+assert 6 'int main() { int a = 5; return ++a; }'
+assert 4 'int main() { int a = 5; a--; return a; }'
+assert 5 'int main() { int a = 5; return a--; }'
+assert 4 'int main() { int a = 5; return --a; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

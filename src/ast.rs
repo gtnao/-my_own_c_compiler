@@ -35,6 +35,10 @@ pub enum Expr {
         op: UnaryOp,
         operand: Box<Expr>,
     },
+    PreInc(Box<Expr>),
+    PreDec(Box<Expr>),
+    PostInc(Box<Expr>),
+    PostDec(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

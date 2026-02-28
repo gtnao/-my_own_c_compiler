@@ -156,6 +156,46 @@ impl Codegen {
                     }
                 }
             }
+            Expr::PreInc(operand) => {
+                // ++a: increment a, return new value
+                if let Expr::Var(name) = operand.as_ref() {
+                    let offset = self.locals[name];
+                    self.emit(&format!("  mov -{}(%rbp), %rax", offset));
+                    self.emit("  add $1, %rax");
+                    self.emit(&format!("  mov %rax, -{}(%rbp)", offset));
+                }
+            }
+            Expr::PreDec(operand) => {
+                // --a: decrement a, return new value
+                if let Expr::Var(name) = operand.as_ref() {
+                    let offset = self.locals[name];
+                    self.emit(&format!("  mov -{}(%rbp), %rax", offset));
+                    self.emit("  sub $1, %rax");
+                    self.emit(&format!("  mov %rax, -{}(%rbp)", offset));
+                }
+            }
+            Expr::PostInc(operand) => {
+                // a++: return old value, then increment a
+                if let Expr::Var(name) = operand.as_ref() {
+                    let offset = self.locals[name];
+                    self.emit(&format!("  mov -{}(%rbp), %rax", offset));
+                    self.emit(&format!("  mov %rax, %rdi"));
+                    self.emit("  add $1, %rdi");
+                    self.emit(&format!("  mov %rdi, -{}(%rbp)", offset));
+                    // %rax still holds old value
+                }
+            }
+            Expr::PostDec(operand) => {
+                // a--: return old value, then decrement a
+                if let Expr::Var(name) = operand.as_ref() {
+                    let offset = self.locals[name];
+                    self.emit(&format!("  mov -{}(%rbp), %rax", offset));
+                    self.emit(&format!("  mov %rax, %rdi"));
+                    self.emit("  sub $1, %rdi");
+                    self.emit(&format!("  mov %rdi, -{}(%rbp)", offset));
+                    // %rax still holds old value
+                }
+            }
             Expr::BinOp { op, lhs, rhs } => {
                 // Evaluate rhs first, push it, then evaluate lhs
                 self.gen_expr(rhs);

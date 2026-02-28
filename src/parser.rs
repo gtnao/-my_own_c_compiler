@@ -378,7 +378,7 @@ impl<'a> Parser<'a> {
         node
     }
 
-    // unary = ("+" | "-") unary | primary
+    // unary = ("+" | "-") unary | "++" unary | "--" unary | postfix
     fn unary(&mut self) -> Expr {
         match self.current().kind {
             TokenKind::Plus => {
@@ -393,8 +393,39 @@ impl<'a> Parser<'a> {
                     operand: Box::new(operand),
                 }
             }
-            _ => self.primary(),
+            TokenKind::PlusPlus => {
+                self.advance();
+                let operand = self.unary();
+                Expr::PreInc(Box::new(operand))
+            }
+            TokenKind::MinusMinus => {
+                self.advance();
+                let operand = self.unary();
+                Expr::PreDec(Box::new(operand))
+            }
+            _ => self.postfix(),
         }
+    }
+
+    // postfix = primary ("++" | "--")*
+    fn postfix(&mut self) -> Expr {
+        let mut node = self.primary();
+
+        loop {
+            match self.current().kind {
+                TokenKind::PlusPlus => {
+                    self.advance();
+                    node = Expr::PostInc(Box::new(node));
+                }
+                TokenKind::MinusMinus => {
+                    self.advance();
+                    node = Expr::PostDec(Box::new(node));
+                }
+                _ => break,
+            }
+        }
+
+        node
     }
 
     // primary = num | ident | "(" expr ")"
