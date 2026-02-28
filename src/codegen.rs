@@ -942,6 +942,13 @@ impl Codegen {
                     }
                 }
             }
+            Expr::StmtExpr(stmts) => {
+                // Evaluate all statements; the last expression statement's
+                // value remains in %rax
+                for s in stmts {
+                    self.gen_stmt(s);
+                }
+            }
         }
     }
 
@@ -1049,6 +1056,15 @@ impl Codegen {
             Expr::VaArg { ty, .. } => ty.clone(),
             Expr::VaStart { .. } => Type::void(),
             Expr::FuncPtrCall { .. } => Type::long_type(),
+            Expr::StmtExpr(stmts) => {
+                // Type of statement expression is the type of the last expression statement
+                if let Some(last) = stmts.last() {
+                    if let Stmt::ExprStmt(expr) = last {
+                        return self.expr_type(expr);
+                    }
+                }
+                Type::int_type()
+            }
             _ => Type::long_type(),
         }
     }

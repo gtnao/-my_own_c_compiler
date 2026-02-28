@@ -83,6 +83,7 @@ pub enum Expr {
         ap: Box<Expr>,
         ty: Type,
     },
+    StmtExpr(Vec<Stmt>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

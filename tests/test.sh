@@ -784,6 +784,12 @@ assert 8 'int main() { return sizeof(typeof(long)); }'
 assert 4 'int main() { return sizeof(__typeof__(int)); }'
 assert 3 'int main() { int a = 3; __typeof(a) b = a; return b; }'
 
+# Step 14.15: GCC statement expressions ({ ... })
+assert 5 'int main() { return ({ 5; }); }'
+assert 3 'int main() { return ({ 1; 2; 3; }); }'
+assert 10 'int main() { int a = ({ int x = 5; x + 5; }); return a; }'
+assert 7 'int main() { int a = 3; int b = ({ int c = 4; a + c; }); return b; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
