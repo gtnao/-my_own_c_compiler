@@ -104,7 +104,7 @@ impl Codegen {
         for (i, (ty, param)) in func.params.iter().enumerate().take(6) {
             let offset = self.locals[param];
             match ty.kind {
-                TypeKind::Char => {
+                TypeKind::Bool | TypeKind::Char => {
                     self.emit(&format!("  movb {}, -{}(%rbp)", arg_regs_8[i], offset));
                 }
                 TypeKind::Short => {
@@ -460,6 +460,11 @@ impl Codegen {
                 self.gen_expr(expr);
                 // Truncate and re-extend to target type
                 match ty.kind {
+                    TypeKind::Bool => {
+                        self.emit("  cmp $0, %rax");
+                        self.emit("  setne %al");
+                        self.emit("  movzbl %al, %eax");
+                    }
                     TypeKind::Char if ty.is_unsigned => self.emit("  movzbl %al, %eax"),
                     TypeKind::Char => self.emit("  movsbq %al, %rax"),
                     TypeKind::Short if ty.is_unsigned => self.emit("  movzwl %ax, %eax"),
@@ -571,6 +576,7 @@ impl Codegen {
         let ty = self.get_var_type(name);
         if self.globals.contains(name) {
             match ty.kind {
+                TypeKind::Bool => self.emit(&format!("  movzbl {}(%rip), %eax", name)),
                 TypeKind::Char if ty.is_unsigned => self.emit(&format!("  movzbl {}(%rip), %eax", name)),
                 TypeKind::Char => self.emit(&format!("  movsbq {}(%rip), %rax", name)),
                 TypeKind::Short if ty.is_unsigned => self.emit(&format!("  movzwl {}(%rip), %eax", name)),
@@ -583,6 +589,7 @@ impl Codegen {
         } else {
             let offset = self.locals[name];
             match ty.kind {
+                TypeKind::Bool => self.emit(&format!("  movzbl -{}(%rbp), %eax", offset)),
                 TypeKind::Char if ty.is_unsigned => self.emit(&format!("  movzbl -{}(%rbp), %eax", offset)),
                 TypeKind::Char => self.emit(&format!("  movsbq -{}(%rbp), %rax", offset)),
                 TypeKind::Short if ty.is_unsigned => self.emit(&format!("  movzwl -{}(%rbp), %eax", offset)),
@@ -597,9 +604,14 @@ impl Codegen {
 
     fn emit_store_var(&mut self, name: &str) {
         let ty = self.get_var_type(name);
+        if ty.kind == TypeKind::Bool {
+            // Normalize to 0/1: cmp $0, %rax; setne %al
+            self.emit("  cmp $0, %rax");
+            self.emit("  setne %al");
+        }
         if self.globals.contains(name) {
             match ty.kind {
-                TypeKind::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
+                TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
                 TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
                 TypeKind::Long => self.emit(&format!("  mov %rax, {}(%rip)", name)),
@@ -608,7 +620,7 @@ impl Codegen {
         } else {
             let offset = self.locals[name];
             match ty.kind {
-                TypeKind::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
+                TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
                 TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
                 TypeKind::Long => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
@@ -619,9 +631,14 @@ impl Codegen {
 
     fn emit_store_var_from_rdi(&mut self, name: &str) {
         let ty = self.get_var_type(name);
+        if ty.kind == TypeKind::Bool {
+            // Normalize to 0/1
+            self.emit("  cmp $0, %rdi");
+            self.emit("  setne %dil");
+        }
         if self.globals.contains(name) {
             match ty.kind {
-                TypeKind::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
+                TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
                 TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
                 TypeKind::Long => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
@@ -630,7 +647,7 @@ impl Codegen {
         } else {
             let offset = self.locals[name];
             match ty.kind {
-                TypeKind::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
+                TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
                 TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
                 TypeKind::Long => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),

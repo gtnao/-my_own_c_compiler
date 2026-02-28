@@ -244,6 +244,15 @@ assert 8 'int main() { return sizeof(unsigned long); }'
 assert 0 'int main() { return (unsigned char)256; }'
 assert 200 'unsigned char g; int main() { g = 200; return g; }'
 
+# Step 4.8: _Bool type
+assert 1 'int main() { _Bool a = 1; return a; }'
+assert 0 'int main() { _Bool a = 0; return a; }'
+assert 1 'int main() { _Bool a = 42; return a; }'
+assert 1 'int main() { _Bool a = 255; return a; }'
+assert 1 'int main() { return (_Bool)42; }'
+assert 0 'int main() { return (_Bool)0; }'
+assert 1 'int main() { return sizeof(_Bool); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

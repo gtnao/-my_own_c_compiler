@@ -51,6 +51,7 @@ impl<'a> Lexer<'a> {
                     "sizeof" => TokenKind::Sizeof,
                     "unsigned" => TokenKind::Unsigned,
                     "void" => TokenKind::Void,
+                    "_Bool" => TokenKind::Bool,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

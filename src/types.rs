@@ -2,6 +2,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
     Void,
+    Bool,
     Char,
     Short,
     Int,
@@ -18,6 +19,7 @@ pub struct Type {
 impl Type {
     // Signed constructors
     pub fn void() -> Self { Self { kind: TypeKind::Void, is_unsigned: false } }
+    pub fn bool_type() -> Self { Self { kind: TypeKind::Bool, is_unsigned: true } }
     pub fn char_type() -> Self { Self { kind: TypeKind::Char, is_unsigned: false } }
     pub fn short_type() -> Self { Self { kind: TypeKind::Short, is_unsigned: false } }
     pub fn int_type() -> Self { Self { kind: TypeKind::Int, is_unsigned: false } }
@@ -33,11 +35,11 @@ impl Type {
     pub fn common_type(a: &Type, b: &Type) -> Type {
         // Integer promotion: char/short → int
         let a = match a.kind {
-            TypeKind::Char | TypeKind::Short => Type::int_type(),
+            TypeKind::Bool | TypeKind::Char | TypeKind::Short => Type::int_type(),
             _ => a.clone(),
         };
         let b = match b.kind {
-            TypeKind::Char | TypeKind::Short => Type::int_type(),
+            TypeKind::Bool | TypeKind::Char | TypeKind::Short => Type::int_type(),
             _ => b.clone(),
         };
         if a.size() >= b.size() { a } else { b }
@@ -47,6 +49,7 @@ impl Type {
     pub fn size(&self) -> usize {
         match self.kind {
             TypeKind::Void => 0,
+            TypeKind::Bool => 1,
             TypeKind::Char => 1,
             TypeKind::Short => 2,
             TypeKind::Int => 4,
@@ -58,6 +61,7 @@ impl Type {
     pub fn align(&self) -> usize {
         match self.kind {
             TypeKind::Void => 1,
+            TypeKind::Bool => 1,
             TypeKind::Char => 1,
             TypeKind::Short => 2,
             TypeKind::Int => 4,

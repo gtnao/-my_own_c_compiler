@@ -22,6 +22,7 @@ pub enum TokenKind {
     Goto,
     Sizeof,
     Unsigned,
+    Bool,
     // Operators
     Plus,
     PlusPlus,

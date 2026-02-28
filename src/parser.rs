@@ -47,7 +47,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool)
     }
 
     fn is_function(&self) -> bool {
@@ -112,6 +112,10 @@ impl<'a> Parser<'a> {
             TokenKind::Void => {
                 self.advance();
                 Type::void()
+            }
+            TokenKind::Bool => {
+                self.advance();
+                Type::bool_type()
             }
             _ => {
                 if is_unsigned {
@@ -396,7 +400,7 @@ impl<'a> Parser<'a> {
                 self.leave_scope();
                 Stmt::Block(stmts)
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool => {
                 self.var_decl()
             }
             _ => {
