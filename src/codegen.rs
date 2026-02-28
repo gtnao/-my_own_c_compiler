@@ -65,6 +65,13 @@ impl Codegen {
             self.emit(&format!("  sub ${}, %rsp", self.stack_size));
         }
 
+        // Store register parameters to stack
+        let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+        for (i, param) in func.params.iter().enumerate() {
+            let offset = self.locals[param];
+            self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs[i], offset));
+        }
+
         for stmt in &func.body {
             self.gen_stmt(stmt);
         }
@@ -365,7 +372,17 @@ impl Codegen {
                     // %rax still holds old value
                 }
             }
-            Expr::FuncCall { name, args: _ } => {
+            Expr::FuncCall { name, args } => {
+                // Evaluate args and push results onto stack
+                for arg in args.iter() {
+                    self.gen_expr(arg);
+                    self.push();
+                }
+                // Pop args into registers (reverse order)
+                let arg_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+                for i in (0..args.len()).rev() {
+                    self.pop(arg_regs[i]);
+                }
                 // Align stack to 16 bytes before call
                 let needs_align = self.stack_depth % 2 != 0;
                 if needs_align {
@@ -489,6 +506,7 @@ mod tests {
         let mut codegen = Codegen::new();
         let funcs = vec![Function {
             name: "main".to_string(),
+            params: vec![],
             body: vec![Stmt::Return(Expr::Num(42))],
             locals: vec![],
         }];
@@ -502,6 +520,7 @@ mod tests {
         let mut codegen = Codegen::new();
         let funcs = vec![Function {
             name: "main".to_string(),
+            params: vec![],
             body: vec![
                 Stmt::VarDecl {
                     name: "a".to_string(),

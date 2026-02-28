@@ -159,6 +159,13 @@ assert 3 'int ret3() { return 3; } int main() { return ret3(); }'
 assert 5 'int ret5() { return 5; } int main() { return ret5(); }'
 assert 8 'int ret3() { return 3; } int ret5() { return 5; } int main() { return ret3() + ret5(); }'
 
+# Step 3.2: function arguments (up to 6)
+assert 7 'int add(int a, int b) { return a + b; } int main() { return add(3, 4); }'
+assert 1 'int sub(int a, int b) { return a - b; } int main() { return sub(4, 3); }'
+assert 120 'int fact(int n) { if (n <= 1) return 1; return n * fact(n - 1); } int main() { return fact(5); }'
+assert 55 'int fib(int n) { if (n <= 1) return n; return fib(n-1) + fib(n-2); } int main() { return fib(10); }'
+assert 21 'int add6(int a, int b, int c, int d, int e, int f) { return a+b+c+d+e+f; } int main() { return add6(1,2,3,4,5,6); }'
+
 # Step 2.15: continue, goto, labels
 assert 25 'int main() { int s = 0; int i; for (i = 0; i < 10; i++) { if (i % 2 == 0) continue; s += i; } return s; }'
 assert 2 'int main() { goto end; return 1; end: return 2; }'

@@ -37,10 +37,46 @@ impl<'a> Parser<'a> {
         };
         self.advance();
         self.expect(TokenKind::LParen);
+
+        self.locals.clear();
+        let mut params = Vec::new();
+
+        // Parse parameter list: (type ident ("," type ident)*)?
+        if self.current().kind != TokenKind::RParen {
+            self.expect(TokenKind::Int);
+            let param_name = match &self.current().kind {
+                TokenKind::Ident(s) => s.clone(),
+                _ => {
+                    self.reporter.error_at(
+                        self.current().pos,
+                        "expected parameter name",
+                    );
+                }
+            };
+            self.advance();
+            params.push(param_name.clone());
+            self.locals.push(param_name);
+
+            while self.current().kind == TokenKind::Comma {
+                self.advance();
+                self.expect(TokenKind::Int);
+                let param_name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected parameter name",
+                        );
+                    }
+                };
+                self.advance();
+                params.push(param_name.clone());
+                self.locals.push(param_name);
+            }
+        }
         self.expect(TokenKind::RParen);
         self.expect(TokenKind::LBrace);
 
-        self.locals.clear();
         let mut body = Vec::new();
         while self.current().kind != TokenKind::RBrace {
             body.push(self.stmt());
@@ -48,7 +84,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::RBrace);
 
         let locals = self.locals.clone();
-        Function { name, body, locals }
+        Function { name, params, body, locals }
     }
 
     // stmt = "return" expr ";"
