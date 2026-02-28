@@ -183,6 +183,12 @@ assert 3 'int main() { int a = 1; { int a = 2; } { int a = 3; return a; } }'
 assert 5 'int main() { int a = 1; { int a = 2; { int a = 3; } } return a + 4; }'
 assert 3 'int main() { int a = 1; { a = 3; } return a; }'
 
+# Step 3.6: global variables
+assert 5 'int g; int main() { g = 5; return g; }'
+assert 10 'int x; int y; int main() { x = 3; y = 7; return x + y; }'
+assert 2 'int g; void set(int v) { g = v; } int main() { set(2); return g; }'
+assert 3 'int g; int main() { int g = 3; return g; }'
+
 # Step 2.15: continue, goto, labels
 assert 25 'int main() { int s = 0; int i; for (i = 0; i < 10; i++) { if (i % 2 == 0) continue; s += i; } return s; }'
 assert 2 'int main() { goto end; return 1; end: return 2; }'

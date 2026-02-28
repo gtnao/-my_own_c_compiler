@@ -109,3 +109,9 @@ pub struct Function {
     pub body: Vec<Stmt>,
     pub locals: Vec<String>,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program {
+    pub globals: Vec<String>,
+    pub functions: Vec<Function>,
+}

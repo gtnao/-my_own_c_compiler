@@ -34,10 +34,10 @@ fn main() {
     let tokens = lexer.tokenize();
 
     let mut parser = Parser::new(tokens, &reporter);
-    let functions = parser.parse();
+    let program = parser.parse();
 
     let mut codegen = Codegen::new();
-    let output = codegen.generate(&functions);
+    let output = codegen.generate(&program);
 
     print!("{}", output);
 }
