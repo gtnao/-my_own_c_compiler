@@ -34,6 +34,7 @@ pub enum TokenKind {
     Volatile,
     Alignof,
     Alignas,
+    Generic,
     // Operators
     Plus,
     PlusPlus,

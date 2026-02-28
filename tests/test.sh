@@ -657,6 +657,11 @@ assert 3 'int main() { struct { int a : 4; int b : 4; } s; s.a = 5; s.b = 3; ret
 assert 7 'int main() { struct { int x : 3; int y : 5; } s; s.x = 7; s.y = 31; return s.x; }'
 assert 31 'int main() { struct { int x : 3; int y : 5; } s; s.x = 7; s.y = 31; return s.y; }'
 
+# Step 12.12: _Generic
+assert 1 'int main() { int x = 0; return _Generic(x, int: 1, long: 2, default: 0); }'
+assert 2 'int main() { long x = 0; return _Generic(x, int: 1, long: 2, default: 0); }'
+assert 0 'int main() { char x = 0; return _Generic(x, int: 1, long: 2, default: 0); }'
+
 # Step 12.11: _Alignof and _Alignas
 assert 4 'int main() { return _Alignof(int); }'
 assert 8 'int main() { return _Alignof(long); }'

@@ -1924,6 +1924,10 @@ impl<'a> Parser<'a> {
     // primary = num | ident | "(" expr ")"
     fn primary(&mut self) -> Expr {
         match self.current().kind.clone() {
+            TokenKind::Generic => {
+                self.advance();
+                return self.parse_generic();
+            }
             TokenKind::Num(val) => {
                 self.advance();
                 Expr::Num(val)
@@ -2223,6 +2227,109 @@ impl<'a> Parser<'a> {
             scope.insert(name.to_string(), unique.clone());
         }
         unique
+    }
+
+    /// Parse _Generic(control_expr, type: expr, type: expr, ..., default: expr)
+    fn parse_generic(&mut self) -> Expr {
+        self.expect(TokenKind::LParen);
+
+        // Parse and evaluate the controlling expression (only need its type)
+        let ctrl_expr = self.assign();
+        let ctrl_ty = self.infer_type(&ctrl_expr);
+
+        self.expect(TokenKind::Comma);
+
+        let mut result: Option<Expr> = None;
+        let mut default_expr: Option<Expr> = None;
+
+        loop {
+            if self.current().kind == TokenKind::Default {
+                self.advance();
+                self.expect(TokenKind::Colon);
+                let expr = self.assign();
+                default_expr = Some(expr);
+            } else {
+                let assoc_ty = self.parse_type();
+                self.expect(TokenKind::Colon);
+                let expr = self.assign();
+                // Check if this type matches the controlling expression's type
+                if result.is_none() && self.types_match(&ctrl_ty, &assoc_ty) {
+                    result = Some(expr);
+                }
+            }
+            if self.current().kind == TokenKind::Comma {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        self.expect(TokenKind::RParen);
+
+        if let Some(r) = result {
+            r
+        } else if let Some(d) = default_expr {
+            d
+        } else {
+            // No matching type and no default — return 0
+            Expr::Num(0)
+        }
+    }
+
+    /// Infer the type of an expression at parse time (best effort).
+    fn infer_type(&self, expr: &Expr) -> Type {
+        match expr {
+            Expr::Num(_) => Type::int_type(),
+            Expr::StrLit(_) => Type::ptr_to(Type::char_type()),
+            Expr::Var(name) => {
+                // Look up variable type from scopes
+                for scope in self.scopes.iter().rev() {
+                    if let Some(unique) = scope.get(name) {
+                        for (ty, n) in &self.locals {
+                            if n == unique {
+                                return ty.clone();
+                            }
+                        }
+                    }
+                }
+                // Check globals
+                for (ty, n, _) in &self.globals {
+                    if n == name {
+                        return ty.clone();
+                    }
+                }
+                Type::int_type()
+            }
+            Expr::Deref(inner) => {
+                let inner_ty = self.infer_type(inner);
+                match inner_ty.kind {
+                    crate::types::TypeKind::Ptr(base) | crate::types::TypeKind::Array(base, _) => *base,
+                    _ => Type::long_type(),
+                }
+            }
+            Expr::Addr(inner) => {
+                let inner_ty = self.infer_type(inner);
+                Type::ptr_to(inner_ty)
+            }
+            Expr::Cast { ty, .. } => ty.clone(),
+            _ => Type::int_type(),
+        }
+    }
+
+    /// Check if two types are compatible for _Generic matching.
+    fn types_match(&self, a: &Type, b: &Type) -> bool {
+        use crate::types::TypeKind;
+        match (&a.kind, &b.kind) {
+            (TypeKind::Void, TypeKind::Void) => true,
+            (TypeKind::Bool, TypeKind::Bool) => true,
+            (TypeKind::Char, TypeKind::Char) => a.is_unsigned == b.is_unsigned,
+            (TypeKind::Short, TypeKind::Short) => a.is_unsigned == b.is_unsigned,
+            (TypeKind::Int, TypeKind::Int) => a.is_unsigned == b.is_unsigned,
+            (TypeKind::Long, TypeKind::Long) => a.is_unsigned == b.is_unsigned,
+            (TypeKind::Ptr(a_base), TypeKind::Ptr(b_base)) => self.types_match(a_base, b_base),
+            (TypeKind::Array(a_base, _), TypeKind::Ptr(b_base)) => self.types_match(a_base, b_base),
+            (TypeKind::Ptr(a_base), TypeKind::Array(b_base, _)) => self.types_match(a_base, b_base),
+            _ => false,
+        }
     }
 
     /// Create a BinOp node, folding constants when both operands are Num.
