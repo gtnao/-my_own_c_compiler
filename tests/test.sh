@@ -797,6 +797,13 @@ assert 5 'int main() { auto int a = 5; return a; }'
 assert 20 'int main() { int a[2]; a[0] = 10; a[1] = 20; void *p = &a[0]; p = p + 4; return *(int*)p; }'
 assert 10 'int main() { int a = 10; void *p = &a; return *(int*)p; }'
 
+# Step 14.18: negative enum values and constant expressions
+assert 255 'enum { A = -1 }; int main() { return (unsigned char)A; }'
+assert 8 'enum { A = 1 << 3 }; int main() { return A; }'
+assert 5 'enum { A = 2, B = A + 3 }; int main() { return B; }'
+assert 255 'enum { A = 0xFF }; int main() { return A; }'
+assert 2 'enum { A, B, C }; int main() { return C; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'

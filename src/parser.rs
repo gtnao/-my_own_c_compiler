@@ -622,13 +622,10 @@ impl<'a> Parser<'a> {
                             }
                         };
                         self.advance();
-                        // Optional explicit value: = num
+                        // Optional explicit value: = constant_expr
                         if self.current().kind == TokenKind::Eq {
                             self.advance();
-                            if let TokenKind::Num(n) = self.current().kind {
-                                val = n;
-                                self.advance();
-                            }
+                            val = self.eval_const_expr();
                         }
                         self.enum_values.insert(name, val);
                         val += 1;
@@ -2375,6 +2372,75 @@ impl<'a> Parser<'a> {
     }
 
     /// Skip __attribute__((...)) if present. May appear multiple times.
+    /// Evaluate a constant expression (for enum values, array sizes, etc.)
+    /// Returns the integer value of the expression.
+    fn eval_const_expr(&mut self) -> i64 {
+        let expr = self.ternary();
+        self.eval_const(&expr)
+    }
+
+    /// Recursively evaluate a constant expression.
+    fn eval_const(&self, expr: &Expr) -> i64 {
+        match expr {
+            Expr::Num(n) => *n,
+            Expr::Cast { expr, .. } => self.eval_const(expr),
+            Expr::UnaryOp { op, operand } => {
+                let val = self.eval_const(operand);
+                match op {
+                    UnaryOp::Neg => -val,
+                    UnaryOp::LogicalNot => if val == 0 { 1 } else { 0 },
+                    UnaryOp::BitNot => !val,
+                }
+            }
+            Expr::BinOp { op, lhs, rhs } => {
+                let l = self.eval_const(lhs);
+                let r = self.eval_const(rhs);
+                match op {
+                    BinOp::Add => l + r,
+                    BinOp::Sub => l - r,
+                    BinOp::Mul => l * r,
+                    BinOp::Div => if r != 0 { l / r } else { 0 },
+                    BinOp::Mod => if r != 0 { l % r } else { 0 },
+                    BinOp::Eq => if l == r { 1 } else { 0 },
+                    BinOp::Ne => if l != r { 1 } else { 0 },
+                    BinOp::Lt => if l < r { 1 } else { 0 },
+                    BinOp::Le => if l <= r { 1 } else { 0 },
+                    BinOp::Gt => if l > r { 1 } else { 0 },
+                    BinOp::Ge => if l >= r { 1 } else { 0 },
+                    BinOp::BitAnd => l & r,
+                    BinOp::BitOr => l | r,
+                    BinOp::BitXor => l ^ r,
+                    BinOp::Shl => l << r,
+                    BinOp::Shr => l >> r,
+                }
+            }
+            Expr::LogicalAnd(l, r) => {
+                if self.eval_const(l) != 0 && self.eval_const(r) != 0 { 1 } else { 0 }
+            }
+            Expr::LogicalOr(l, r) => {
+                if self.eval_const(l) != 0 || self.eval_const(r) != 0 { 1 } else { 0 }
+            }
+            Expr::Ternary { cond, then_expr, else_expr } => {
+                if self.eval_const(cond) != 0 {
+                    self.eval_const(then_expr)
+                } else {
+                    self.eval_const(else_expr)
+                }
+            }
+            Expr::SizeofType(ty) => ty.size() as i64,
+            Expr::SizeofExpr(_) => 0, // can't evaluate runtime sizeof
+            Expr::Var(name) => {
+                // Check enum constants
+                if let Some(&val) = self.enum_values.get(name) {
+                    val
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        }
+    }
+
     /// Skip _Static_assert(expr, "message"); or _Static_assert(expr);
     fn skip_static_assert(&mut self) {
         self.advance(); // _Static_assert
