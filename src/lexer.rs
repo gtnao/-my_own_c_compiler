@@ -84,6 +84,7 @@ impl<'a> Lexer<'a> {
                     "float" => TokenKind::FloatKw,
                     "double" => TokenKind::DoubleKw,
                     "_Bool" => TokenKind::Bool,
+                    "_Static_assert" => TokenKind::StaticAssert,
                     "_Alignof" => TokenKind::Alignof,
                     "_Alignas" => TokenKind::Alignas,
                     "_Generic" => TokenKind::Generic,

@@ -40,6 +40,11 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Program {
         let mut functions = Vec::new();
         while self.current().kind != TokenKind::Eof {
+            // Skip _Static_assert at top level
+            if self.current().kind == TokenKind::StaticAssert {
+                self.skip_static_assert();
+                continue;
+            }
             // Skip top-level 'static' qualifier (treat static functions/vars as normal)
             if self.current().kind == TokenKind::Static {
                 self.advance();
@@ -1013,6 +1018,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.expect(TokenKind::Semicolon);
                 self.typedefs.insert(name, ty);
+                Stmt::Block(vec![])
+            }
+            TokenKind::StaticAssert => {
+                self.skip_static_assert();
                 Stmt::Block(vec![])
             }
             TokenKind::Static => {
@@ -2337,6 +2346,27 @@ impl<'a> Parser<'a> {
     }
 
     /// Skip __attribute__((...)) if present. May appear multiple times.
+    /// Skip _Static_assert(expr, "message"); or _Static_assert(expr);
+    fn skip_static_assert(&mut self) {
+        self.advance(); // _Static_assert
+        self.expect(TokenKind::LParen);
+        // Skip until matching RParen (handles nested parens in the expression)
+        let mut depth = 1;
+        while depth > 0 {
+            match self.current().kind {
+                TokenKind::LParen => depth += 1,
+                TokenKind::RParen => depth -= 1,
+                TokenKind::Eof => break,
+                _ => {}
+            }
+            self.advance();
+        }
+        // Skip optional semicolon
+        if self.current().kind == TokenKind::Semicolon {
+            self.advance();
+        }
+    }
+
     fn skip_attribute(&mut self) {
         while self.current().kind == TokenKind::Attribute {
             self.advance(); // __attribute__
