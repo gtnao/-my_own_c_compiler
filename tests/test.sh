@@ -462,6 +462,15 @@ assert 8 'int g[3] = {1, 2, 3}; int main() { return g[0] + g[1] + g[2] + g[0] * 
 assert 104 'char s[] = "hello"; int main() { return s[0]; }'
 assert 0 'char s[] = "hello"; int main() { return s[5]; }'
 
+# Step 10.3: #define (object-like macros)
+assert 42 '#define N 42
+int main() { return N; }'
+assert 10 '#define X 3
+#define Y 7
+int main() { return X + Y; }'
+assert 5 '#define VAL 5
+int main() { int a = VAL; return a; }'
+
 # Step 10.2: #include
 # Create test header file
 echo 'int add(int a, int b) { return a + b; }' > "$TMPDIR/add.h"
