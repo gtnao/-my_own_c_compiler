@@ -27,7 +27,7 @@ fn preprocess_recursive(
     // Conditional compilation stack: true = active, false = skipped
     let mut cond_stack: Vec<bool> = Vec::new();
 
-    for line in source.lines() {
+    for (line_no, line) in source.lines().enumerate() {
         let trimmed = line.trim();
 
         // Handle conditional compilation directives (even in skipped regions)
@@ -157,8 +157,9 @@ fn preprocess_recursive(
             let name = trimmed["#undef".len()..].trim();
             macros.remove(name);
         } else {
-            // Expand macros in regular lines
-            let expanded = expand_macros(line, macros);
+            // Replace predefined macros before general macro expansion
+            let with_predefined = replace_predefined(line, file_path, line_no + 1);
+            let expanded = expand_macros(&with_predefined, macros);
             result.push_str(&expanded);
             result.push('\n');
         }
@@ -293,6 +294,73 @@ fn parse_macro_args(input: &str) -> Vec<String> {
         args.push(trimmed);
     }
     args
+}
+
+/// Replace predefined macros __FILE__ and __LINE__ in a line.
+fn replace_predefined(line: &str, file_path: &str, line_no: usize) -> String {
+    let bytes = line.as_bytes();
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            // Skip string literals
+            result.push('"');
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'"' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    result.push(bytes[i] as char);
+                    i += 1;
+                }
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            if i < bytes.len() {
+                result.push('"');
+                i += 1;
+            }
+        } else if bytes[i] == b'\'' {
+            // Skip char literals
+            result.push('\'');
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'\'' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    result.push(bytes[i] as char);
+                    i += 1;
+                }
+                result.push(bytes[i] as char);
+                i += 1;
+            }
+            if i < bytes.len() {
+                result.push('\'');
+                i += 1;
+            }
+        } else if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let ident = &line[start..i];
+            match ident {
+                "__FILE__" => {
+                    result.push('"');
+                    result.push_str(file_path);
+                    result.push('"');
+                }
+                "__LINE__" => {
+                    result.push_str(&line_no.to_string());
+                }
+                _ => {
+                    result.push_str(ident);
+                }
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    result
 }
 
 /// Evaluate a simple conditional expression for #if / #elif.

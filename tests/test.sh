@@ -479,6 +479,11 @@ int main() { return X + Y; }'
 assert 5 '#define VAL 5
 int main() { int a = VAL; return a; }'
 
+# Step 10.7: predefined macros (__FILE__, __LINE__)
+assert 1 'int main() { return __LINE__; }'
+assert 2 'int x;
+int main() { return __LINE__; }'
+
 # Step 10.6: # (stringize) and ## (token paste) operators
 assert_output 'hello' '#define STR(x) #x
 int printf();
