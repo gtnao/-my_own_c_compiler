@@ -61,10 +61,39 @@ impl Codegen {
                         self.emit("  idiv %rdi");
                     }
                     BinOp::Mod => {
-                        // idiv: quotient -> %rax, remainder -> %rdx
                         self.emit("  cqto");
                         self.emit("  idiv %rdi");
                         self.emit("  mov %rdx, %rax");
+                    }
+                    BinOp::Eq => {
+                        self.emit("  cmp %rdi, %rax");
+                        self.emit("  sete %al");
+                        self.emit("  movzb %al, %rax");
+                    }
+                    BinOp::Ne => {
+                        self.emit("  cmp %rdi, %rax");
+                        self.emit("  setne %al");
+                        self.emit("  movzb %al, %rax");
+                    }
+                    BinOp::Lt => {
+                        self.emit("  cmp %rdi, %rax");
+                        self.emit("  setl %al");
+                        self.emit("  movzb %al, %rax");
+                    }
+                    BinOp::Le => {
+                        self.emit("  cmp %rdi, %rax");
+                        self.emit("  setle %al");
+                        self.emit("  movzb %al, %rax");
+                    }
+                    BinOp::Gt => {
+                        self.emit("  cmp %rdi, %rax");
+                        self.emit("  setg %al");
+                        self.emit("  movzb %al, %rax");
+                    }
+                    BinOp::Ge => {
+                        self.emit("  cmp %rdi, %rax");
+                        self.emit("  setge %al");
+                        self.emit("  movzb %al, %rax");
                     }
                 }
             }

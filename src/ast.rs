@@ -5,6 +5,12 @@ pub enum BinOp {
     Mul,
     Div,
     Mod,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -68,6 +68,25 @@ assert 2 '11 % 3'
 assert 0 '10 % 5'
 assert 1 '7 % 2'
 
+# Step 1.6: comparison operators
+assert 1 '1==1'
+assert 0 '1==2'
+assert 1 '1!=2'
+assert 0 '1!=1'
+assert 1 '1<2'
+assert 0 '2<1'
+assert 0 '1<1'
+assert 1 '1<=1'
+assert 1 '1<=2'
+assert 0 '2<=1'
+assert 1 '2>1'
+assert 0 '1>2'
+assert 1 '2>=2'
+assert 1 '3>=2'
+assert 0 '1>=2'
+assert 1 '5+1==6'
+assert 1 '3*2>=5'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

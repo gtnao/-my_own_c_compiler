@@ -35,12 +35,37 @@ impl Lexer {
             }
 
             let pos = self.pos;
+
+            // Two-character tokens
+            if ch == '=' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::EqEq, pos });
+                continue;
+            }
+            if ch == '!' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::Ne, pos });
+                continue;
+            }
+            if ch == '<' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::Le, pos });
+                continue;
+            }
+            if ch == '>' && self.peek_next() == Some('=') {
+                self.pos += 2;
+                tokens.push(Token { kind: TokenKind::Ge, pos });
+                continue;
+            }
+
             let kind = match ch {
                 '+' => TokenKind::Plus,
                 '-' => TokenKind::Minus,
                 '*' => TokenKind::Star,
                 '/' => TokenKind::Slash,
                 '%' => TokenKind::Percent,
+                '<' => TokenKind::Lt,
+                '>' => TokenKind::Gt,
                 '(' => TokenKind::LParen,
                 ')' => TokenKind::RParen,
                 _ => {
@@ -58,6 +83,14 @@ impl Lexer {
         });
 
         tokens
+    }
+
+    fn peek_next(&self) -> Option<char> {
+        if self.pos + 1 < self.input.len() {
+            Some(self.input[self.pos + 1] as char)
+        } else {
+            None
+        }
     }
 
     fn read_number(&mut self) -> i64 {
