@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::ast::{BinOp, Expr, Function, Stmt, UnaryOp};
 use crate::error::ErrorReporter;
 use crate::token::{Token, TokenKind};
@@ -7,11 +9,20 @@ pub struct Parser<'a> {
     pos: usize,
     reporter: &'a ErrorReporter,
     locals: Vec<String>,
+    scopes: Vec<HashMap<String, String>>,
+    unique_counter: usize,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: Vec<Token>, reporter: &'a ErrorReporter) -> Self {
-        Self { tokens, pos: 0, reporter, locals: Vec::new() }
+        Self {
+            tokens,
+            pos: 0,
+            reporter,
+            locals: Vec::new(),
+            scopes: Vec::new(),
+            unique_counter: 0,
+        }
     }
 
     // program = (function | prototype)*
@@ -51,6 +62,9 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::LParen);
 
         self.locals.clear();
+        self.scopes.clear();
+        self.unique_counter = 0;
+        self.enter_scope();
         let mut params = Vec::new();
 
         // Parse parameter list: (type ident ("," type ident)*)?
@@ -66,8 +80,8 @@ impl<'a> Parser<'a> {
                 }
             };
             self.advance();
-            params.push(param_name.clone());
-            self.locals.push(param_name);
+            let unique = self.declare_var(&param_name);
+            params.push(unique);
 
             while self.current().kind == TokenKind::Comma {
                 self.advance();
@@ -82,8 +96,8 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
-                params.push(param_name.clone());
-                self.locals.push(param_name);
+                let unique = self.declare_var(&param_name);
+                params.push(unique);
             }
         }
         self.expect(TokenKind::RParen);
@@ -102,6 +116,7 @@ impl<'a> Parser<'a> {
             body.push(self.stmt());
         }
         self.expect(TokenKind::RBrace);
+        self.leave_scope();
 
         let locals = self.locals.clone();
         Some(Function { name, params, body, locals })
@@ -290,11 +305,13 @@ impl<'a> Parser<'a> {
             }
             TokenKind::LBrace => {
                 self.advance();
+                self.enter_scope();
                 let mut stmts = Vec::new();
                 while self.current().kind != TokenKind::RBrace {
                     stmts.push(self.stmt());
                 }
                 self.expect(TokenKind::RBrace);
+                self.leave_scope();
                 Stmt::Block(stmts)
             }
             TokenKind::Int => {
@@ -338,9 +355,7 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        if !self.locals.contains(&name) {
-            self.locals.push(name.clone());
-        }
+        let unique = self.declare_var(&name);
 
         let init = if self.current().kind == TokenKind::Eq {
             self.advance();
@@ -349,7 +364,7 @@ impl<'a> Parser<'a> {
             None
         };
         self.expect(TokenKind::Semicolon);
-        Stmt::VarDecl { name, init }
+        Stmt::VarDecl { name: unique, init }
     }
 
     // expr = assign ("," assign)*
@@ -772,7 +787,8 @@ impl<'a> Parser<'a> {
                     self.expect(TokenKind::RParen);
                     return Expr::FuncCall { name, args };
                 }
-                Expr::Var(name)
+                let resolved = self.resolve_var(&name);
+                Expr::Var(resolved)
             }
             TokenKind::LParen => {
                 self.advance();
@@ -805,6 +821,40 @@ impl<'a> Parser<'a> {
             );
         }
         self.advance();
+    }
+
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn leave_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn declare_var(&mut self, name: &str) -> String {
+        // Generate a unique internal name if the variable already exists
+        let unique = if self.locals.iter().any(|l| l == name) {
+            self.unique_counter += 1;
+            format!("{}.{}", name, self.unique_counter)
+        } else {
+            name.to_string()
+        };
+        self.locals.push(unique.clone());
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name.to_string(), unique.clone());
+        }
+        unique
+    }
+
+    fn resolve_var(&self, name: &str) -> String {
+        // Search from innermost scope to outermost
+        for scope in self.scopes.iter().rev() {
+            if let Some(unique) = scope.get(name) {
+                return unique.clone();
+            }
+        }
+        // Fallback: return original name (for undeclared variables)
+        name.to_string()
     }
 }
 

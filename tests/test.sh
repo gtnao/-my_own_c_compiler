@@ -176,6 +176,13 @@ assert 7 'int add(int a, int b); int main() { return add(3, 4); } int add(int a,
 assert 0 'void noop() { return; } int main() { noop(); return 0; }'
 assert 5 'void noop() {} int main() { noop(); return 5; }'
 
+# Step 3.5: block scope and variable shadowing
+assert 1 'int main() { int a = 1; { int a = 2; } return a; }'
+assert 2 'int main() { int a = 1; { int a = 2; return a; } }'
+assert 3 'int main() { int a = 1; { int a = 2; } { int a = 3; return a; } }'
+assert 5 'int main() { int a = 1; { int a = 2; { int a = 3; } } return a + 4; }'
+assert 3 'int main() { int a = 1; { a = 3; } return a; }'
+
 # Step 2.15: continue, goto, labels
 assert 25 'int main() { int s = 0; int i; for (i = 0; i < 10; i++) { if (i % 2 == 0) continue; s += i; } return s; }'
 assert 2 'int main() { goto end; return 1; end: return 2; }'
