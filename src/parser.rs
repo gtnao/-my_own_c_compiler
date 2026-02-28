@@ -83,6 +83,50 @@ impl<'a> Parser<'a> {
             if self.current().kind == TokenKind::Typedef {
                 self.advance();
                 let ty = self.parse_type();
+
+                // Check for function pointer typedef: typedef RetType (*Name)(params...)
+                if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && self.tokens[self.pos + 1].kind == TokenKind::Star
+                {
+                    self.advance(); // (
+                    self.advance(); // *
+                    // Skip qualifiers between * and name
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                        self.advance();
+                    }
+                    let name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected typedef name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RParen);
+                    // Skip parameter list: (params...)
+                    if self.current().kind == TokenKind::LParen {
+                        let mut depth = 1;
+                        self.advance();
+                        while depth > 0 {
+                            match self.current().kind {
+                                TokenKind::LParen => depth += 1,
+                                TokenKind::RParen => depth -= 1,
+                                TokenKind::Eof => break,
+                                _ => {}
+                            }
+                            self.advance();
+                        }
+                    }
+                    self.skip_attribute();
+                    self.expect(TokenKind::Semicolon);
+                    // Function pointer typedef: store as pointer to void (simplified)
+                    self.typedefs.insert(name, Type::ptr_to(ty));
+                    continue;
+                }
+
                 let name = match &self.current().kind {
                     TokenKind::Ident(s) => s.clone(),
                     _ => {
@@ -93,6 +137,21 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
+                // Handle array typedef: typedef int Name[N];
+                if self.current().kind == TokenKind::LBracket {
+                    self.advance();
+                    let size = if self.current().kind != TokenKind::RBracket {
+                        let s = self.eval_const_expr();
+                        s as usize
+                    } else {
+                        0
+                    };
+                    self.expect(TokenKind::RBracket);
+                    self.expect(TokenKind::Semicolon);
+                    let arr_ty = Type { kind: crate::types::TypeKind::Array(Box::new(ty), size), is_unsigned: false };
+                    self.typedefs.insert(name, arr_ty);
+                    continue;
+                }
                 self.expect(TokenKind::Semicolon);
                 self.typedefs.insert(name, ty);
                 continue;
@@ -1018,19 +1077,75 @@ impl<'a> Parser<'a> {
             TokenKind::Typedef => {
                 self.advance();
                 let ty = self.parse_type();
-                let name = match &self.current().kind {
-                    TokenKind::Ident(s) => s.clone(),
-                    _ => {
-                        self.reporter.error_at(
-                            self.current().pos,
-                            "expected typedef name",
-                        );
+                // Check for function pointer typedef: typedef RetType (*Name)(params...)
+                if self.current().kind == TokenKind::LParen
+                    && self.pos + 1 < self.tokens.len()
+                    && self.tokens[self.pos + 1].kind == TokenKind::Star
+                {
+                    self.advance(); // (
+                    self.advance(); // *
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                        self.advance();
                     }
-                };
-                self.advance();
-                self.expect(TokenKind::Semicolon);
-                self.typedefs.insert(name, ty);
-                Stmt::Block(vec![])
+                    let name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected typedef name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RParen);
+                    if self.current().kind == TokenKind::LParen {
+                        let mut depth = 1;
+                        self.advance();
+                        while depth > 0 {
+                            match self.current().kind {
+                                TokenKind::LParen => depth += 1,
+                                TokenKind::RParen => depth -= 1,
+                                TokenKind::Eof => break,
+                                _ => {}
+                            }
+                            self.advance();
+                        }
+                    }
+                    self.skip_attribute();
+                    self.expect(TokenKind::Semicolon);
+                    self.typedefs.insert(name, Type::ptr_to(ty));
+                    Stmt::Block(vec![])
+                } else {
+                    let name = match &self.current().kind {
+                        TokenKind::Ident(s) => s.clone(),
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected typedef name",
+                            );
+                        }
+                    };
+                    self.advance();
+                    // Handle array typedef
+                    if self.current().kind == TokenKind::LBracket {
+                        self.advance();
+                        let size = if self.current().kind != TokenKind::RBracket {
+                            let s = self.eval_const_expr();
+                            s as usize
+                        } else {
+                            0
+                        };
+                        self.expect(TokenKind::RBracket);
+                        self.expect(TokenKind::Semicolon);
+                        let arr_ty = Type { kind: crate::types::TypeKind::Array(Box::new(ty), size), is_unsigned: false };
+                        self.typedefs.insert(name, arr_ty);
+                        Stmt::Block(vec![])
+                    } else {
+                        self.expect(TokenKind::Semicolon);
+                        self.typedefs.insert(name, ty);
+                        Stmt::Block(vec![])
+                    }
+                }
             }
             TokenKind::StaticAssert => {
                 self.skip_static_assert();
@@ -1856,7 +1971,7 @@ impl<'a> Parser<'a> {
                 // sizeof(type) vs sizeof expr
                 if self.current().kind == TokenKind::LParen
                     && self.pos + 1 < self.tokens.len()
-                    && Self::is_type_keyword(&self.tokens[self.pos + 1].kind)
+                    && self.is_type_start(&self.tokens[self.pos + 1].kind)
                 {
                     self.advance(); // consume "("
                     let ty = self.parse_type();

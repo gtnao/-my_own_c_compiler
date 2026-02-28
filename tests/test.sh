@@ -804,6 +804,11 @@ assert 5 'enum { A = 2, B = A + 3 }; int main() { return B; }'
 assert 255 'enum { A = 0xFF }; int main() { return A; }'
 assert 2 'enum { A, B, C }; int main() { return C; }'
 
+# Step 14.19: function pointer typedef and array typedef
+assert 5 'typedef void (*fn_ptr)(void); int main() { return 5; }'
+assert 3 'typedef int (*binop)(int, int); int add(int a, int b) { return a + b; } int main() { binop f = add; return f(1, 2); }'
+assert 40 'typedef int arr10[10]; int main() { return sizeof(arr10); }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
