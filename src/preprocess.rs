@@ -1,7 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-/// Simple preprocessor that handles #include and #define directives.
+/// Macro definition: object-like or function-like.
+#[derive(Clone)]
+enum MacroDef {
+    Object(String),                         // #define NAME value
+    Function(Vec<String>, String),          // #define NAME(params) body
+}
+
+/// Simple preprocessor that handles #include, #define directives.
 pub fn preprocess(source: &str, file_path: &str) -> String {
     let mut included = HashSet::new();
     included.insert(PathBuf::from(file_path).canonicalize().unwrap_or_default());
@@ -13,7 +20,7 @@ fn preprocess_recursive(
     source: &str,
     file_path: &str,
     included: &mut HashSet<PathBuf>,
-    macros: &mut HashMap<String, String>,
+    macros: &mut HashMap<String, MacroDef>,
 ) -> String {
     let dir = Path::new(file_path).parent().unwrap_or(Path::new("."));
     let mut result = String::new();
@@ -66,15 +73,29 @@ fn preprocess_recursive(
                 result.push('\n');
             }
         } else if trimmed.starts_with("#define") {
-            // #define NAME value
             let rest = trimmed["#define".len()..].trim();
-            let mut parts = rest.splitn(2, |c: char| c.is_ascii_whitespace());
-            if let Some(name) = parts.next() {
-                let value = parts.next().unwrap_or("").trim().to_string();
-                macros.insert(name.to_string(), value);
+            // Check for function-like macro: NAME(params) body
+            // NAME must be immediately followed by '(' (no space)
+            let name_end = rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(rest.len());
+            let name = &rest[..name_end];
+            let after_name = &rest[name_end..];
+
+            if after_name.starts_with('(') {
+                // Function-like macro: #define NAME(a, b) body
+                let paren_end = after_name.find(')').unwrap_or(after_name.len());
+                let params_str = &after_name[1..paren_end];
+                let params: Vec<String> = params_str.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                let body = after_name[paren_end + 1..].trim().to_string();
+                macros.insert(name.to_string(), MacroDef::Function(params, body));
+            } else {
+                // Object-like macro: #define NAME value
+                let value = after_name.trim().to_string();
+                macros.insert(name.to_string(), MacroDef::Object(value));
             }
         } else if trimmed.starts_with("#undef") {
-            // #undef NAME
             let name = trimmed["#undef".len()..].trim();
             macros.remove(name);
         } else {
@@ -88,8 +109,8 @@ fn preprocess_recursive(
     result
 }
 
-/// Expand object-like macros in a line by replacing identifiers.
-fn expand_macros(line: &str, macros: &HashMap<String, String>) -> String {
+/// Expand macros in a line by replacing identifiers.
+fn expand_macros(line: &str, macros: &HashMap<String, MacroDef>) -> String {
     if macros.is_empty() {
         return line.to_string();
     }
@@ -99,22 +120,51 @@ fn expand_macros(line: &str, macros: &HashMap<String, String>) -> String {
     let mut i = 0;
 
     while i < bytes.len() {
-        // Check for identifier start
         if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
             let start = i;
             while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                 i += 1;
             }
             let ident = &line[start..i];
-            if let Some(value) = macros.get(ident) {
-                // Recursively expand (for chained macros)
-                let expanded = expand_macros(value, macros);
-                result.push_str(&expanded);
+            if let Some(def) = macros.get(ident) {
+                match def.clone() {
+                    MacroDef::Object(value) => {
+                        let expanded = expand_macros(&value, macros);
+                        result.push_str(&expanded);
+                    }
+                    MacroDef::Function(params, body) => {
+                        // Check for '(' immediately after identifier
+                        let mut j = i;
+                        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+                            j += 1;
+                        }
+                        if j < bytes.len() && bytes[j] == b'(' {
+                            // Parse arguments
+                            j += 1; // skip '('
+                            let args = parse_macro_args(&line[j..]);
+                            // Skip past the closing ')'
+                            let mut depth = 1;
+                            while j < bytes.len() && depth > 0 {
+                                if bytes[j] == b'(' { depth += 1; }
+                                if bytes[j] == b')' { depth -= 1; }
+                                j += 1;
+                            }
+                            i = j;
+                            // Substitute parameters in body
+                            let substituted = substitute_params(&body, &params, &args);
+                            let expanded = expand_macros(&substituted, macros);
+                            result.push_str(&expanded);
+                        } else {
+                            // No '(' follows — not a function-like invocation
+                            result.push_str(ident);
+                        }
+                    }
+                }
             } else {
                 result.push_str(ident);
             }
         } else if bytes[i] == b'"' {
-            // Skip string literals (don't expand macros inside strings)
+            // Skip string literals
             result.push('"');
             i += 1;
             while i < bytes.len() && bytes[i] != b'"' {
@@ -144,6 +194,68 @@ fn expand_macros(line: &str, macros: &HashMap<String, String>) -> String {
             if i < bytes.len() {
                 result.push('\'');
                 i += 1;
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+
+    result
+}
+
+/// Parse comma-separated macro arguments from input (after the opening '(').
+fn parse_macro_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0;
+    let bytes = input.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'(' {
+            depth += 1;
+            current.push('(');
+        } else if bytes[i] == b')' {
+            if depth == 0 {
+                break;
+            }
+            depth -= 1;
+            current.push(')');
+        } else if bytes[i] == b',' && depth == 0 {
+            args.push(current.trim().to_string());
+            current.clear();
+        } else {
+            current.push(bytes[i] as char);
+        }
+        i += 1;
+    }
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() || !args.is_empty() {
+        args.push(trimmed);
+    }
+    args
+}
+
+/// Substitute parameter names in a macro body with argument values.
+fn substitute_params(body: &str, params: &[String], args: &[String]) -> String {
+    let bytes = body.as_bytes();
+    let mut result = String::new();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let ident = &body[start..i];
+            if let Some(pos) = params.iter().position(|p| p == ident) {
+                if pos < args.len() {
+                    result.push_str(&args[pos]);
+                }
+            } else {
+                result.push_str(ident);
             }
         } else {
             result.push(bytes[i] as char);

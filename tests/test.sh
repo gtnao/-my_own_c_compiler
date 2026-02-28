@@ -462,6 +462,14 @@ assert 8 'int g[3] = {1, 2, 3}; int main() { return g[0] + g[1] + g[2] + g[0] * 
 assert 104 'char s[] = "hello"; int main() { return s[0]; }'
 assert 0 'char s[] = "hello"; int main() { return s[5]; }'
 
+# Step 10.4: #define (function-like macros)
+assert 7 '#define MAX(a,b) ((a)>(b)?(a):(b))
+int main() { return MAX(3, 7); }'
+assert 15 '#define ADD(x,y) ((x)+(y))
+int main() { return ADD(7, 8); }'
+assert 9 '#define SQ(x) ((x)*(x))
+int main() { return SQ(3); }'
+
 # Step 10.3: #define (object-like macros)
 assert 42 '#define N 42
 int main() { return N; }'
