@@ -715,6 +715,22 @@ assert 3 'int __attribute__((noinline)) add(int a, int b) { return a + b; } int 
 assert 6 'static inline int add(int a, int b) { return a + b; } int main() { return add(2, 4); }'
 assert 10 'inline int dbl(int x) { return x * 2; } int main() { return dbl(5); }'
 
+# Step 14.5: hex, octal, and binary integer literals
+assert 255 'int main() { return 0xFF; }'
+assert 15 'int main() { return 0x0F; }'
+assert 171 'int main() { return 0xAB; }'
+assert 0 'int main() { return 0x0; }'
+assert 7 'int main() { return 07; }'
+assert 63 'int main() { return 077; }'
+assert 8 'int main() { return 010; }'
+assert 0 'int main() { return 00; }'
+assert 5 'int main() { return 0b101; }'
+assert 10 'int main() { return 0b1010; }'
+assert 255 'int main() { int x = 0xFF; return x; }'
+assert 16 'int main() { return 0x10; }'
+assert 10 'int main() { return 0x0A; }'
+assert 15 'int main() { return 0xf; }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'

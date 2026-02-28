@@ -416,12 +416,59 @@ impl<'a> Lexer<'a> {
     /// Read a number (integer or float). Returns (is_float, int_value, float_value).
     fn read_number_or_float(&mut self) -> (bool, i64, f64) {
         let start = self.pos;
-        let mut is_float = false;
 
         // Check if starting with '.' (like .5)
         if self.pos < self.input.len() && self.input[self.pos] == b'.' {
-            is_float = true;
+            return self.read_decimal_float(start, true);
         }
+
+        // Check for 0x (hex), 0b (binary), or 0 (octal) prefix
+        if self.pos < self.input.len() && self.input[self.pos] == b'0' {
+            if self.pos + 1 < self.input.len() {
+                let next = self.input[self.pos + 1];
+                // Hex literal: 0x or 0X
+                if next == b'x' || next == b'X' {
+                    self.pos += 2; // skip '0x'
+                    let mut val: i64 = 0;
+                    while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_hexdigit() {
+                        val = val * 16 + (self.input[self.pos] as char).to_digit(16).unwrap() as i64;
+                        self.pos += 1;
+                    }
+                    self.skip_int_suffix();
+                    return (false, val, 0.0);
+                }
+                // Binary literal: 0b or 0B
+                if next == b'b' || next == b'B' {
+                    self.pos += 2; // skip '0b'
+                    let mut val: i64 = 0;
+                    while self.pos < self.input.len() && (self.input[self.pos] == b'0' || self.input[self.pos] == b'1') {
+                        val = val * 2 + (self.input[self.pos] - b'0') as i64;
+                        self.pos += 1;
+                    }
+                    self.skip_int_suffix();
+                    return (false, val, 0.0);
+                }
+                // Octal literal: 0 followed by octal digits
+                if next >= b'0' && next <= b'7' {
+                    self.pos += 1; // skip leading '0'
+                    let mut val: i64 = 0;
+                    while self.pos < self.input.len() && self.input[self.pos] >= b'0' && self.input[self.pos] <= b'7' {
+                        val = val * 8 + (self.input[self.pos] - b'0') as i64;
+                        self.pos += 1;
+                    }
+                    self.skip_int_suffix();
+                    return (false, val, 0.0);
+                }
+            }
+        }
+
+        // Decimal integer or float
+        self.read_decimal_float(start, false)
+    }
+
+    /// Read a decimal integer or float literal starting from `start`.
+    fn read_decimal_float(&mut self, start: usize, starts_with_dot: bool) -> (bool, i64, f64) {
+        let mut is_float = starts_with_dot;
 
         // Read integer part
         while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_digit() {
@@ -461,16 +508,9 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
 
-        // Skip 'L'/'l'/'U'/'u' suffixes for integer literals
+        // Skip integer suffixes
         if !is_float {
-            while self.pos < self.input.len() {
-                let c = self.input[self.pos];
-                if c == b'L' || c == b'l' || c == b'U' || c == b'u' {
-                    self.pos += 1;
-                } else {
-                    break;
-                }
-            }
+            self.skip_int_suffix();
         }
 
         let s = std::str::from_utf8(&self.input[start..self.pos]).unwrap();
@@ -482,6 +522,18 @@ impl<'a> Lexer<'a> {
         } else {
             let val: i64 = s.parse().unwrap_or(0);
             (false, val, 0.0)
+        }
+    }
+
+    /// Skip integer suffixes: L, l, U, u, LL, ll, ULL, etc.
+    fn skip_int_suffix(&mut self) {
+        while self.pos < self.input.len() {
+            let c = self.input[self.pos];
+            if c == b'L' || c == b'l' || c == b'U' || c == b'u' {
+                self.pos += 1;
+            } else {
+                break;
+            }
         }
     }
 }
