@@ -888,6 +888,25 @@ assert 42 '#define CALL(fn, ...) fn(__VA_ARGS__)
 int add(int a, int b) { return a+b; }
 int main() { return CALL(add, 20, 22); }'
 
+# Step 16.2: defined() operator and complex #if expressions
+assert 42 '#define FOO 1
+#if defined(FOO) && !defined(BAR)
+int main() { return 42; }
+#else
+int main() { return 0; }
+#endif'
+assert 10 '#define X 5
+#if X + 5 == 10
+int main() { return 10; }
+#else
+int main() { return 0; }
+#endif'
+assert 1 '#if 1 || 0
+int main() { return 1; }
+#else
+int main() { return 0; }
+#endif'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

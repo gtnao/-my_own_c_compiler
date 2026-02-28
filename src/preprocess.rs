@@ -394,61 +394,377 @@ fn replace_predefined(line: &str, file_path: &str, line_no: usize) -> String {
     result
 }
 
-/// Evaluate a simple conditional expression for #if / #elif.
-/// Supports: integer literals, defined(NAME), and basic comparisons.
+/// Evaluate a preprocessor conditional expression for #if / #elif.
+/// Supports: integer literals, defined(NAME), &&, ||, !, ==, !=, <, >, <=, >=,
+/// +, -, *, /, %, parentheses, bitwise &, |, ^, ~, <<, >>, ternary ? :
 fn evaluate_simple_cond(cond: &str, macros: &HashMap<String, MacroDef>) -> bool {
-    let expanded = expand_macros(cond, macros);
-    let trimmed = expanded.trim();
+    let mut eval = CondEval::new(cond, macros);
+    eval.eval_expr() != 0
+}
 
-    // Handle defined(NAME) or defined NAME
-    if trimmed.starts_with("defined") {
-        let rest = trimmed["defined".len()..].trim();
-        let name = if rest.starts_with('(') {
-            let end = rest.find(')').unwrap_or(rest.len());
-            rest[1..end].trim()
-        } else {
-            rest.split_whitespace().next().unwrap_or("")
-        };
-        return macros.contains_key(name);
+/// Tokenizer + recursive descent evaluator for preprocessor #if expressions.
+struct CondEval<'a> {
+    input: Vec<char>,
+    pos: usize,
+    macros: &'a HashMap<String, MacroDef>,
+}
+
+impl<'a> CondEval<'a> {
+    fn new(cond: &str, macros: &'a HashMap<String, MacroDef>) -> Self {
+        Self { input: cond.chars().collect(), pos: 0, macros }
     }
 
-    // Handle simple comparisons: ==, !=, >, <, >=, <=
-    for (op, f) in &[
-        ("==", (|a: i64, b: i64| a == b) as fn(i64, i64) -> bool),
-        ("!=", (|a, b| a != b) as fn(i64, i64) -> bool),
-        (">=", (|a, b| a >= b) as fn(i64, i64) -> bool),
-        ("<=", (|a, b| a <= b) as fn(i64, i64) -> bool),
-        (">", (|a, b| a > b) as fn(i64, i64) -> bool),
-        ("<", (|a, b| a < b) as fn(i64, i64) -> bool),
-    ] {
-        if let Some(pos) = trimmed.find(op) {
-            let lhs = trimmed[..pos].trim();
-            let rhs = trimmed[pos + op.len()..].trim();
-            let lv = parse_cond_value(lhs, macros);
-            let rv = parse_cond_value(rhs, macros);
-            return f(lv, rv);
+    fn skip_ws(&mut self) {
+        while self.pos < self.input.len() && self.input[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
         }
     }
 
-    // Simple integer value: non-zero is true
-    let val = parse_cond_value(trimmed, macros);
-    val != 0
-}
-
-/// Parse a value in a preprocessor condition expression.
-fn parse_cond_value(s: &str, macros: &HashMap<String, MacroDef>) -> i64 {
-    let trimmed = s.trim();
-    if trimmed.starts_with("defined") {
-        let rest = trimmed["defined".len()..].trim();
-        let name = if rest.starts_with('(') {
-            let end = rest.find(')').unwrap_or(rest.len());
-            rest[1..end].trim()
-        } else {
-            rest.split_whitespace().next().unwrap_or("")
-        };
-        return if macros.contains_key(name) { 1 } else { 0 };
+    fn peek(&mut self) -> Option<char> {
+        self.skip_ws();
+        self.input.get(self.pos).copied()
     }
-    trimmed.parse::<i64>().unwrap_or(0)
+
+    fn peek2(&mut self) -> Option<char> {
+        self.skip_ws();
+        self.input.get(self.pos + 1).copied()
+    }
+
+    fn advance(&mut self) { self.pos += 1; }
+
+    fn read_ident(&mut self) -> String {
+        let mut s = String::new();
+        while self.pos < self.input.len() && (self.input[self.pos].is_ascii_alphanumeric() || self.input[self.pos] == '_') {
+            s.push(self.input[self.pos]);
+            self.pos += 1;
+        }
+        s
+    }
+
+    fn read_number(&mut self) -> i64 {
+        let mut s = String::new();
+        // Handle 0x hex prefix
+        if self.pos < self.input.len() && self.input[self.pos] == '0' {
+            s.push('0');
+            self.pos += 1;
+            if self.pos < self.input.len() && (self.input[self.pos] == 'x' || self.input[self.pos] == 'X') {
+                self.pos += 1;
+                let mut hex = String::new();
+                while self.pos < self.input.len() && self.input[self.pos].is_ascii_hexdigit() {
+                    hex.push(self.input[self.pos]);
+                    self.pos += 1;
+                }
+                // Skip suffixes (U, L, LL, UL, ULL)
+                while self.pos < self.input.len() && matches!(self.input[self.pos], 'u' | 'U' | 'l' | 'L') {
+                    self.pos += 1;
+                }
+                return i64::from_str_radix(&hex, 16).unwrap_or(0);
+            }
+        }
+        while self.pos < self.input.len() && self.input[self.pos].is_ascii_digit() {
+            s.push(self.input[self.pos]);
+            self.pos += 1;
+        }
+        // Skip suffixes
+        while self.pos < self.input.len() && matches!(self.input[self.pos], 'u' | 'U' | 'l' | 'L') {
+            self.pos += 1;
+        }
+        s.parse::<i64>().unwrap_or(0)
+    }
+
+    // expr = ternary
+    fn eval_expr(&mut self) -> i64 {
+        self.eval_ternary()
+    }
+
+    // ternary = logical_or ("?" expr ":" ternary)?
+    fn eval_ternary(&mut self) -> i64 {
+        let val = self.eval_logical_or();
+        self.skip_ws();
+        if self.peek() == Some('?') {
+            self.advance();
+            let then_val = self.eval_expr();
+            self.skip_ws();
+            if self.peek() == Some(':') { self.advance(); }
+            let else_val = self.eval_ternary();
+            if val != 0 { then_val } else { else_val }
+        } else {
+            val
+        }
+    }
+
+    // logical_or = logical_and ("||" logical_and)*
+    fn eval_logical_or(&mut self) -> i64 {
+        let mut val = self.eval_logical_and();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('|') && self.peek2() == Some('|') {
+                self.advance(); self.advance();
+                let rhs = self.eval_logical_and();
+                val = if val != 0 || rhs != 0 { 1 } else { 0 };
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // logical_and = bitwise_or ("&&" bitwise_or)*
+    fn eval_logical_and(&mut self) -> i64 {
+        let mut val = self.eval_bitwise_or();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('&') && self.peek2() == Some('&') {
+                self.advance(); self.advance();
+                let rhs = self.eval_bitwise_or();
+                val = if val != 0 && rhs != 0 { 1 } else { 0 };
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // bitwise_or = bitwise_xor ("|" bitwise_xor)*
+    fn eval_bitwise_or(&mut self) -> i64 {
+        let mut val = self.eval_bitwise_xor();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('|') && self.peek2() != Some('|') {
+                self.advance();
+                val |= self.eval_bitwise_xor();
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // bitwise_xor = bitwise_and ("^" bitwise_and)*
+    fn eval_bitwise_xor(&mut self) -> i64 {
+        let mut val = self.eval_bitwise_and();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('^') {
+                self.advance();
+                val ^= self.eval_bitwise_and();
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // bitwise_and = equality ("&" equality)*
+    fn eval_bitwise_and(&mut self) -> i64 {
+        let mut val = self.eval_equality();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('&') && self.peek2() != Some('&') {
+                self.advance();
+                val &= self.eval_equality();
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // equality = relational (("==" | "!=") relational)*
+    fn eval_equality(&mut self) -> i64 {
+        let mut val = self.eval_relational();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('=') && self.peek2() == Some('=') {
+                self.advance(); self.advance();
+                let rhs = self.eval_relational();
+                val = if val == rhs { 1 } else { 0 };
+            } else if self.peek() == Some('!') && self.peek2() == Some('=') {
+                self.advance(); self.advance();
+                let rhs = self.eval_relational();
+                val = if val != rhs { 1 } else { 0 };
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // relational = shift (("<" | ">" | "<=" | ">=") shift)*
+    fn eval_relational(&mut self) -> i64 {
+        let mut val = self.eval_shift();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('<') && self.peek2() == Some('=') {
+                self.advance(); self.advance();
+                let rhs = self.eval_shift();
+                val = if val <= rhs { 1 } else { 0 };
+            } else if self.peek() == Some('>') && self.peek2() == Some('=') {
+                self.advance(); self.advance();
+                let rhs = self.eval_shift();
+                val = if val >= rhs { 1 } else { 0 };
+            } else if self.peek() == Some('<') && self.peek2() != Some('<') {
+                self.advance();
+                let rhs = self.eval_shift();
+                val = if val < rhs { 1 } else { 0 };
+            } else if self.peek() == Some('>') && self.peek2() != Some('>') {
+                self.advance();
+                let rhs = self.eval_shift();
+                val = if val > rhs { 1 } else { 0 };
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // shift = add (("<<" | ">>") add)*
+    fn eval_shift(&mut self) -> i64 {
+        let mut val = self.eval_add();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('<') && self.peek2() == Some('<') {
+                self.advance(); self.advance();
+                val <<= self.eval_add();
+            } else if self.peek() == Some('>') && self.peek2() == Some('>') {
+                self.advance(); self.advance();
+                val >>= self.eval_add();
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // add = mul (("+" | "-") mul)*
+    fn eval_add(&mut self) -> i64 {
+        let mut val = self.eval_mul();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('+') {
+                self.advance();
+                val += self.eval_mul();
+            } else if self.peek() == Some('-') {
+                self.advance();
+                val -= self.eval_mul();
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // mul = unary (("*" | "/" | "%") unary)*
+    fn eval_mul(&mut self) -> i64 {
+        let mut val = self.eval_unary();
+        loop {
+            self.skip_ws();
+            if self.peek() == Some('*') {
+                self.advance();
+                val *= self.eval_unary();
+            } else if self.peek() == Some('/') {
+                self.advance();
+                let rhs = self.eval_unary();
+                if rhs != 0 { val /= rhs; }
+            } else if self.peek() == Some('%') {
+                self.advance();
+                let rhs = self.eval_unary();
+                if rhs != 0 { val %= rhs; }
+            } else {
+                break;
+            }
+        }
+        val
+    }
+
+    // unary = "!" unary | "~" unary | "-" unary | "+" unary | primary
+    fn eval_unary(&mut self) -> i64 {
+        self.skip_ws();
+        if self.peek() == Some('!') {
+            self.advance();
+            let val = self.eval_unary();
+            return if val == 0 { 1 } else { 0 };
+        }
+        if self.peek() == Some('~') {
+            self.advance();
+            return !self.eval_unary();
+        }
+        if self.peek() == Some('-') {
+            self.advance();
+            return -self.eval_unary();
+        }
+        if self.peek() == Some('+') {
+            self.advance();
+            return self.eval_unary();
+        }
+        self.eval_primary()
+    }
+
+    // primary = number | "(" expr ")" | "defined" ident | "defined" "(" ident ")" | ident | char_literal
+    fn eval_primary(&mut self) -> i64 {
+        self.skip_ws();
+        if let Some(ch) = self.peek() {
+            if ch == '(' {
+                self.advance();
+                let val = self.eval_expr();
+                self.skip_ws();
+                if self.peek() == Some(')') { self.advance(); }
+                return val;
+            }
+            if ch == '\'' {
+                // Character literal
+                self.advance();
+                let c = if self.pos < self.input.len() {
+                    let ch = self.input[self.pos];
+                    self.pos += 1;
+                    if ch == '\\' && self.pos < self.input.len() {
+                        let esc = self.input[self.pos];
+                        self.pos += 1;
+                        match esc {
+                            'n' => '\n' as i64,
+                            't' => '\t' as i64,
+                            '0' => 0,
+                            _ => esc as i64,
+                        }
+                    } else {
+                        ch as i64
+                    }
+                } else {
+                    0
+                };
+                if self.pos < self.input.len() && self.input[self.pos] == '\'' {
+                    self.pos += 1;
+                }
+                return c;
+            }
+            if ch.is_ascii_digit() {
+                return self.read_number();
+            }
+            if ch.is_ascii_alphabetic() || ch == '_' {
+                let ident = self.read_ident();
+                if ident == "defined" {
+                    self.skip_ws();
+                    let has_paren = self.peek() == Some('(');
+                    if has_paren { self.advance(); }
+                    self.skip_ws();
+                    let name = self.read_ident();
+                    if has_paren {
+                        self.skip_ws();
+                        if self.peek() == Some(')') { self.advance(); }
+                    }
+                    return if self.macros.contains_key(&name) { 1 } else { 0 };
+                }
+                // Check if it's a macro
+                if let Some(MacroDef::Object(val)) = self.macros.get(&ident) {
+                    let mut sub_eval = CondEval::new(val, self.macros);
+                    return sub_eval.eval_expr();
+                }
+                // Unknown identifier in preprocessor expression = 0
+                return 0;
+            }
+        }
+        0
+    }
 }
 
 /// Substitute parameter names in a macro body with argument values.
