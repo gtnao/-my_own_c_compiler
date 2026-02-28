@@ -99,7 +99,43 @@ impl Codegen {
             }
         }
 
+        self.peephole_optimize();
         self.output.clone()
+    }
+
+    /// Peephole optimization pass on the generated assembly.
+    fn peephole_optimize(&mut self) {
+        let lines: Vec<&str> = self.output.lines().collect();
+        let mut result = Vec::new();
+        let mut i = 0;
+        while i < lines.len() {
+            if i + 1 < lines.len() {
+                let cur = lines[i].trim();
+                let next = lines[i + 1].trim();
+
+                // Pattern 1: push %rax; pop %rax → remove both
+                if cur == "push %rax" && next == "pop %rax" {
+                    i += 2;
+                    continue;
+                }
+
+                // Pattern 2: push %rax; pop %reg → mov %rax, %reg
+                if cur == "push %rax" {
+                    if let Some(reg) = next.strip_prefix("pop ") {
+                        result.push(format!("  mov %rax, {}", reg));
+                        i += 2;
+                        continue;
+                    }
+                }
+
+                // Pattern 3: mov X, %rax; push %rax → push X (only for simple operands)
+                // Skip this for safety — could interfere with addressing modes
+            }
+            result.push(lines[i].to_string());
+            i += 1;
+        }
+        self.output = result.join("\n");
+        self.output.push('\n');
     }
 
     fn gen_function(&mut self, func: &Function) {
