@@ -16,6 +16,7 @@ pub struct Parser<'a> {
     struct_tags: HashMap<String, Type>,
     enum_values: HashMap<String, i64>,
     typedefs: HashMap<String, Type>,
+    extern_names: std::collections::HashSet<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -31,6 +32,7 @@ impl<'a> Parser<'a> {
             struct_tags: HashMap::new(),
             enum_values: HashMap::new(),
             typedefs: HashMap::new(),
+            extern_names: std::collections::HashSet::new(),
         }
     }
 
@@ -38,6 +40,36 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Program {
         let mut functions = Vec::new();
         while self.current().kind != TokenKind::Eof {
+            // Handle extern declaration (just skip it — no storage allocated)
+            if self.current().kind == TokenKind::Extern {
+                self.advance();
+                let ty = self.parse_type();
+                let name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected name after extern",
+                        );
+                    }
+                };
+                self.advance();
+                // Skip function prototype: extern int foo(int, int);
+                if self.current().kind == TokenKind::LParen {
+                    let mut depth = 1;
+                    self.advance();
+                    while depth > 0 {
+                        if self.current().kind == TokenKind::LParen { depth += 1; }
+                        if self.current().kind == TokenKind::RParen { depth -= 1; }
+                        self.advance();
+                    }
+                }
+                self.expect(TokenKind::Semicolon);
+                // Register type for codegen but mark as extern (no storage)
+                self.extern_names.insert(name.clone());
+                self.globals.push((ty, name, None));
+                continue;
+            }
             // Handle top-level typedef
             if self.current().kind == TokenKind::Typedef {
                 self.advance();
@@ -67,6 +99,7 @@ impl<'a> Parser<'a> {
         Program {
             globals: self.globals.clone(),
             functions,
+            extern_names: self.extern_names.clone(),
         }
     }
 
@@ -1933,7 +1966,7 @@ mod tests {
     #[test]
     fn test_global_var() {
         let prog = parse_program("int g; int main() { g = 5; return g; }");
-        assert_eq!(prog.globals, vec![(Type::int_type(), "g".to_string())]);
+        assert_eq!(prog.globals, vec![(Type::int_type(), "g".to_string(), None)]);
         assert_eq!(prog.functions.len(), 1);
     }
 

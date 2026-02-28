@@ -50,8 +50,16 @@ impl Codegen {
             self.global_types.insert(name.clone(), ty.clone());
         }
 
-        // Emit global variable declarations
+        // Emit global variable declarations (skip extern without definition)
+        let mut emitted_globals = std::collections::HashSet::new();
         for (ty, name, init) in &program.globals {
+            if emitted_globals.contains(name) {
+                continue;
+            }
+            if init.is_none() && program.extern_names.contains(name) {
+                continue;
+            }
+            emitted_globals.insert(name.clone());
             if let Some(bytes) = init {
                 // Initialized global: .data section
                 self.emit("  .data");
@@ -905,6 +913,7 @@ mod tests {
         let mut codegen = Codegen::new();
         let program = Program {
             globals: vec![],
+            extern_names: std::collections::HashSet::new(),
             functions: vec![Function {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
@@ -923,6 +932,7 @@ mod tests {
         let mut codegen = Codegen::new();
         let program = Program {
             globals: vec![],
+            extern_names: std::collections::HashSet::new(),
             functions: vec![Function {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
@@ -949,6 +959,7 @@ mod tests {
         let mut codegen = Codegen::new();
         let program = Program {
             globals: vec![],
+            extern_names: std::collections::HashSet::new(),
             functions: vec![Function {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),
@@ -975,6 +986,7 @@ mod tests {
         let mut codegen = Codegen::new();
         let program = Program {
             globals: vec![],
+            extern_names: std::collections::HashSet::new(),
             functions: vec![Function {
                 name: "main".to_string(),
                 return_ty: Type::int_type(),

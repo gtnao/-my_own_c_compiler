@@ -29,6 +29,7 @@ pub enum TokenKind {
     Enum,
     Typedef,
     Static,
+    Extern,
     // Operators
     Plus,
     PlusPlus,
