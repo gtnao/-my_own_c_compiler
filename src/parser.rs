@@ -14,18 +14,30 @@ impl<'a> Parser<'a> {
         Self { tokens, pos: 0, reporter, locals: Vec::new() }
     }
 
-    // program = function*
+    // program = (function | prototype)*
     pub fn parse(&mut self) -> Vec<Function> {
         let mut functions = Vec::new();
         while self.current().kind != TokenKind::Eof {
-            functions.push(self.function());
+            if let Some(func) = self.function_or_prototype() {
+                functions.push(func);
+            }
         }
         functions
     }
 
-    // function = "int" ident "(" ")" "{" stmt* "}"
-    fn function(&mut self) -> Function {
-        self.expect(TokenKind::Int);
+    // function_or_prototype = type ident "(" params? ")" ("{" stmt* "}" | ";")
+    fn function_or_prototype(&mut self) -> Option<Function> {
+        // Accept "int" or "void" as return type
+        if self.current().kind == TokenKind::Int {
+            self.advance();
+        } else if self.current().kind == TokenKind::Void {
+            self.advance();
+        } else {
+            self.reporter.error_at(
+                self.current().pos,
+                &format!("expected type, but got {:?}", self.current().kind),
+            );
+        }
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
@@ -75,6 +87,14 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(TokenKind::RParen);
+
+        // Forward declaration (prototype): ends with ";"
+        if self.current().kind == TokenKind::Semicolon {
+            self.advance();
+            return None;
+        }
+
+        // Function definition: has body
         self.expect(TokenKind::LBrace);
 
         let mut body = Vec::new();
@@ -84,7 +104,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::RBrace);
 
         let locals = self.locals.clone();
-        Function { name, params, body, locals }
+        Some(Function { name, params, body, locals })
     }
 
     // stmt = "return" expr ";"
@@ -95,9 +115,14 @@ impl<'a> Parser<'a> {
         match &self.current().kind {
             TokenKind::Return => {
                 self.advance();
-                let expr = self.expr();
-                self.expect(TokenKind::Semicolon);
-                Stmt::Return(expr)
+                if self.current().kind == TokenKind::Semicolon {
+                    self.advance();
+                    Stmt::Return(None)
+                } else {
+                    let expr = self.expr();
+                    self.expect(TokenKind::Semicolon);
+                    Stmt::Return(Some(expr))
+                }
             }
             TokenKind::If => {
                 self.advance();
@@ -802,7 +827,7 @@ mod tests {
         assert_eq!(funcs.len(), 1);
         assert_eq!(funcs[0].name, "main");
         assert_eq!(funcs[0].body.len(), 1);
-        assert_eq!(funcs[0].body[0], Stmt::Return(Expr::Num(42)));
+        assert_eq!(funcs[0].body[0], Stmt::Return(Some(Expr::Num(42))));
     }
 
     #[test]
@@ -811,7 +836,7 @@ mod tests {
         assert_eq!(funcs[0].body.len(), 3);
         assert_eq!(funcs[0].body[0], Stmt::ExprStmt(Expr::Num(1)));
         assert_eq!(funcs[0].body[1], Stmt::ExprStmt(Expr::Num(2)));
-        assert_eq!(funcs[0].body[2], Stmt::Return(Expr::Num(3)));
+        assert_eq!(funcs[0].body[2], Stmt::Return(Some(Expr::Num(3))));
     }
 
     #[test]
@@ -819,7 +844,7 @@ mod tests {
         let funcs = parse_program("int main() { return 1 + 2; }");
         assert_eq!(funcs[0].body.len(), 1);
         match &funcs[0].body[0] {
-            Stmt::Return(Expr::BinOp { op: BinOp::Add, .. }) => {}
+            Stmt::Return(Some(Expr::BinOp { op: BinOp::Add, .. })) => {}
             _ => panic!("expected return with add"),
         }
     }
@@ -848,7 +873,7 @@ mod tests {
         assert_eq!(funcs[0].name, "ret3");
         assert_eq!(funcs[1].name, "main");
         match &funcs[1].body[0] {
-            Stmt::Return(Expr::FuncCall { name, args }) => {
+            Stmt::Return(Some(Expr::FuncCall { name, args })) => {
                 assert_eq!(name, "ret3");
                 assert_eq!(args.len(), 0);
             }

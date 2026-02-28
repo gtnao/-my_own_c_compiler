@@ -170,6 +170,12 @@ assert 21 'int add6(int a, int b, int c, int d, int e, int f) { return a+b+c+d+e
 assert 36 'int add8(int a, int b, int c, int d, int e, int f, int g, int h) { return a+b+c+d+e+f+g+h; } int main() { return add8(1,2,3,4,5,6,7,8); }'
 assert 28 'int add7(int a, int b, int c, int d, int e, int f, int g) { return a+b+c+d+e+f+g; } int main() { return add7(1,2,3,4,5,6,7); }'
 
+# Step 3.4: forward declarations and void functions
+assert 3 'int ret3(); int ret3() { return 3; } int main() { return ret3(); }'
+assert 7 'int add(int a, int b); int main() { return add(3, 4); } int add(int a, int b) { return a + b; }'
+assert 0 'void noop() { return; } int main() { noop(); return 0; }'
+assert 5 'void noop() {} int main() { noop(); return 5; }'
+
 # Step 2.15: continue, goto, labels
 assert 25 'int main() { int s = 0; int i; for (i = 0; i < 10; i++) { if (i % 2 == 0) continue; s += i; } return s; }'
 assert 2 'int main() { goto end; return 1; end: return 2; }'

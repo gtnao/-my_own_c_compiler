@@ -62,7 +62,7 @@ pub enum Expr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Return(Expr),
+    Return(Option<Expr>),
     ExprStmt(Expr),
     VarDecl {
         name: String,

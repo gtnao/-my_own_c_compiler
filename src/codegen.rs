@@ -94,7 +94,9 @@ impl Codegen {
     fn gen_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Return(expr) => {
-                self.gen_expr(expr);
+                if let Some(e) = expr {
+                    self.gen_expr(e);
+                }
                 let func_name = self.current_func_name.clone();
                 self.emit(&format!("  jmp .Lreturn.{}", func_name));
             }
@@ -535,7 +537,7 @@ mod tests {
         let funcs = vec![Function {
             name: "main".to_string(),
             params: vec![],
-            body: vec![Stmt::Return(Expr::Num(42))],
+            body: vec![Stmt::Return(Some(Expr::Num(42)))],
             locals: vec![],
         }];
         let output = codegen.generate(&funcs);
@@ -554,7 +556,7 @@ mod tests {
                     name: "a".to_string(),
                     init: Some(Expr::Num(5)),
                 },
-                Stmt::Return(Expr::Var("a".to_string())),
+                Stmt::Return(Some(Expr::Var("a".to_string()))),
             ],
             locals: vec!["a".to_string()],
         }];
