@@ -35,6 +35,8 @@ impl<'a> Lexer<'a> {
                     "return" => TokenKind::Return,
                     "int" => TokenKind::Int,
                     "char" => TokenKind::Char,
+                    "short" => TokenKind::Short,
+                    "long" => TokenKind::Long,
                     "if" => TokenKind::If,
                     "else" => TokenKind::Else,
                     "while" => TokenKind::While,

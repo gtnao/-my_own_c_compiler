@@ -5,8 +5,10 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Void,
-    Char, // 1 byte, signed
-    Int,  // 8 bytes (64-bit) for now
+    Char,  // 1 byte, signed
+    Short, // 2 bytes, signed
+    Int,   // 4 bytes, signed
+    Long,  // 8 bytes, signed
 }
 
 impl Type {
@@ -15,7 +17,9 @@ impl Type {
         match self {
             Type::Void => 0,
             Type::Char => 1,
-            Type::Int => 8,
+            Type::Short => 2,
+            Type::Int => 4,
+            Type::Long => 8,
         }
     }
 
@@ -24,7 +28,9 @@ impl Type {
         match self {
             Type::Void => 1,
             Type::Char => 1,
-            Type::Int => 8,
+            Type::Short => 2,
+            Type::Int => 4,
+            Type::Long => 8,
         }
     }
 }

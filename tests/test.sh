@@ -203,6 +203,16 @@ assert 97 'int foo(char a) { return a; } int main() { return foo(97); }'
 assert 0 'int main() { char a = 0; return a; }'
 assert 255 'int main() { char a = 255; return a & 255; }'
 
+# Step 4.3: short and long types
+assert 42 'int main() { short a = 42; return a; }'
+assert 3 'int main() { short a = 1; short b = 2; return a + b; }'
+assert 42 'short g; int main() { g = 42; return g; }'
+assert 42 'int main() { long a = 42; return a; }'
+assert 3 'int main() { long a = 1; long b = 2; return a + b; }'
+assert 42 'long g; int main() { g = 42; return g; }'
+assert 6 'int main() { char a = 1; short b = 2; int c = 3; return a + b + c; }'
+assert 10 'int add(int a, int b) { return a + b; } int main() { return add(3, 7); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

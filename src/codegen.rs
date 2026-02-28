@@ -98,6 +98,8 @@ impl Codegen {
 
         // Store register parameters to stack (first 6)
         let arg_regs_64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
+        let arg_regs_32 = ["%edi", "%esi", "%edx", "%ecx", "%r8d", "%r9d"];
+        let arg_regs_16 = ["%di", "%si", "%dx", "%cx", "%r8w", "%r9w"];
         let arg_regs_8 = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"];
         for (i, (ty, param)) in func.params.iter().enumerate().take(6) {
             let offset = self.locals[param];
@@ -105,7 +107,13 @@ impl Codegen {
                 Type::Char => {
                     self.emit(&format!("  movb {}, -{}(%rbp)", arg_regs_8[i], offset));
                 }
+                Type::Short => {
+                    self.emit(&format!("  movw {}, -{}(%rbp)", arg_regs_16[i], offset));
+                }
                 Type::Int => {
+                    self.emit(&format!("  movl {}, -{}(%rbp)", arg_regs_32[i], offset));
+                }
+                Type::Long => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
                 Type::Void => {}
@@ -114,9 +122,8 @@ impl Codegen {
         // Copy stack parameters to local slots (7th and beyond)
         for (i, (_ty, param)) in func.params.iter().enumerate().skip(6) {
             let src_offset = 16 + (i - 6) * 8;
-            let dst_offset = self.locals[param];
             self.emit(&format!("  mov {}(%rbp), %rax", src_offset));
-            self.emit(&format!("  mov %rax, -{}(%rbp)", dst_offset));
+            self.emit_store_var(param);
         }
 
         for stmt in &func.body {
@@ -549,14 +556,18 @@ impl Codegen {
         if self.globals.contains(name) {
             match ty {
                 Type::Char => self.emit(&format!("  movsbq {}(%rip), %rax", name)),
-                Type::Int => self.emit(&format!("  mov {}(%rip), %rax", name)),
+                Type::Short => self.emit(&format!("  movswq {}(%rip), %rax", name)),
+                Type::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
+                Type::Long => self.emit(&format!("  mov {}(%rip), %rax", name)),
                 Type::Void => {}
             }
         } else {
             let offset = self.locals[name];
             match ty {
                 Type::Char => self.emit(&format!("  movsbq -{}(%rbp), %rax", offset)),
-                Type::Int => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
+                Type::Short => self.emit(&format!("  movswq -{}(%rbp), %rax", offset)),
+                Type::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
+                Type::Long => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
                 Type::Void => {}
             }
         }
@@ -567,14 +578,18 @@ impl Codegen {
         if self.globals.contains(name) {
             match ty {
                 Type::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
-                Type::Int => self.emit(&format!("  mov %rax, {}(%rip)", name)),
+                Type::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
+                Type::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
+                Type::Long => self.emit(&format!("  mov %rax, {}(%rip)", name)),
                 Type::Void => {}
             }
         } else {
             let offset = self.locals[name];
             match ty {
                 Type::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
-                Type::Int => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
+                Type::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
+                Type::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
+                Type::Long => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
                 Type::Void => {}
             }
         }
@@ -585,14 +600,18 @@ impl Codegen {
         if self.globals.contains(name) {
             match ty {
                 Type::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
-                Type::Int => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
+                Type::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
+                Type::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
+                Type::Long => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
                 Type::Void => {}
             }
         } else {
             let offset = self.locals[name];
             match ty {
                 Type::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
-                Type::Int => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
+                Type::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
+                Type::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
+                Type::Long => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
                 Type::Void => {}
             }
         }
@@ -658,8 +677,8 @@ mod tests {
         };
         let output = codegen.generate(&program);
         assert!(output.contains("sub $16, %rsp"));
-        assert!(output.contains("mov %rax, -8(%rbp)"));
-        assert!(output.contains("mov -8(%rbp), %rax"));
+        assert!(output.contains("movl %eax, -4(%rbp)"));
+        assert!(output.contains("movslq -4(%rbp), %rax"));
     }
 
     #[test]
