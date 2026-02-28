@@ -623,8 +623,22 @@ assert 42 'int main() { const int a = 42; return a; }'
 assert 3 'int main() { const int *p; int a = 3; p = &a; return *p; }'
 assert 5 'int main() { volatile int a = 5; return a; }'
 
+# Step 13.7: Comprehensive tests
+
 # Struct-based linked list simulation (via array)
 assert 15 'int main() { int vals[5] = {1, 2, 3, 4, 5}; int sum = 0; int i; for (i = 0; i < 5; i++) sum += vals[i]; return sum; }'
+
+# Sieve of Eratosthenes (count primes up to 30)
+assert 10 'int main() { int sieve[31]; int i, j; for (i = 0; i <= 30; i++) sieve[i] = 1; sieve[0] = 0; sieve[1] = 0; for (i = 2; i * i <= 30; i++) if (sieve[i]) for (j = i * i; j <= 30; j += i) sieve[j] = 0; int count = 0; for (i = 2; i <= 30; i++) if (sieve[i]) count++; return count; }'
+
+# Matrix multiplication (2x2)
+assert 19 'int main() { int a[4] = {1, 2, 3, 4}; int b[4] = {5, 6, 7, 8}; int c[4]; c[0] = a[0]*b[0] + a[1]*b[2]; c[1] = a[0]*b[1] + a[1]*b[3]; c[2] = a[2]*b[0] + a[3]*b[2]; c[3] = a[2]*b[1] + a[3]*b[3]; return c[0]; }'
+
+# Nested function calls with recursion (Ackermann A(2,3))
+assert 9 'int ack(int m, int n) { if (m == 0) return n + 1; if (n == 0) return ack(m - 1, 1); return ack(m - 1, ack(m, n - 1)); } int main() { return ack(2, 3); }'
+
+# Function pointer dispatch
+assert 15 'int dbl(int x) { return x * 2; } int triple(int x) { return x * 3; } int main() { int (*f)(int) = dbl; int a = f(3); f = triple; int b = f(3); return a + b; }'
 
 # Step 11.3: Function pointers
 assert 7 'int add(int a, int b) { return a + b; } int main() { int (*fp)(int, int) = add; return fp(3, 4); }'

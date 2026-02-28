@@ -163,6 +163,70 @@ int main() {
 | 関数定義と引数 | フィボナッチ, GCD, 累乗 |
 | ブロックスコープ | バブルソート（ループ内の一時変数） |
 
+### エラトステネスの篩（素数計数）
+
+```c
+int main() {
+    int sieve[31];
+    int i, j;
+    for (i = 0; i <= 30; i++) sieve[i] = 1;
+    sieve[0] = 0; sieve[1] = 0;
+    for (i = 2; i * i <= 30; i++)
+        if (sieve[i])
+            for (j = i * i; j <= 30; j += i)
+                sieve[j] = 0;
+    int count = 0;
+    for (i = 2; i <= 30; i++)
+        if (sieve[i]) count++;
+    return count;  // => 10
+}
+```
+
+使用機能: 配列、複数変数宣言、ネストしたfor文、複合代入 `+=`
+
+### 行列積（2x2）
+
+```c
+int main() {
+    int a[4] = {1, 2, 3, 4};
+    int b[4] = {5, 6, 7, 8};
+    int c[4];
+    c[0] = a[0]*b[0] + a[1]*b[2];  // 1*5+2*7=19
+    return c[0];
+}
+```
+
+使用機能: 配列初期化子、算術式の組み合わせ
+
+### アッカーマン関数
+
+```c
+int ack(int m, int n) {
+    if (m == 0) return n + 1;
+    if (n == 0) return ack(m - 1, 1);
+    return ack(m - 1, ack(m, n - 1));
+}
+int main() { return ack(2, 3); }  // => 9
+```
+
+使用機能: 深い再帰、再帰呼び出しのネスト
+
+### 関数ポインタによるディスパッチ
+
+```c
+int dbl(int x) { return x * 2; }
+int triple(int x) { return x * 3; }
+int main() {
+    int (*f)(int) = dbl;
+    int a = f(3);     // 6
+    f = triple;
+    int b = f(3);     // 9
+    return a + b;     // => 15
+}
+```
+
+使用機能: 関数ポインタ宣言、関数-ポインタ退化、間接呼び出し、ポインタの再代入
+
 ## テスト結果
 
-全310テストがパス（既存298 + 総合テスト12）。
+全371テストがパス。
