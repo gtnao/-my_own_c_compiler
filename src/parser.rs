@@ -16,6 +16,10 @@ pub struct Parser<'a> {
     struct_tags: HashMap<String, Type>,
     enum_values: HashMap<String, i64>,
     typedefs: HashMap<String, Type>,
+    /// Maps typedef name to struct tag name, for resolving forward-declared structs
+    typedef_struct_tags: HashMap<String, String>,
+    /// Last struct/union tag name parsed by parse_struct_or_union
+    last_struct_tag: Option<String>,
     extern_names: std::collections::HashSet<String>,
 }
 
@@ -47,6 +51,8 @@ impl<'a> Parser<'a> {
             struct_tags: HashMap::new(),
             enum_values: HashMap::new(),
             typedefs,
+            typedef_struct_tags: HashMap::new(),
+            last_struct_tag: None,
             extern_names: std::collections::HashSet::new(),
         }
     }
@@ -138,6 +144,9 @@ impl<'a> Parser<'a> {
                     self.skip_attribute();
                     self.expect(TokenKind::Semicolon);
                     // Function pointer typedef: store as pointer to void (simplified)
+                    if let Some(ref tag) = self.last_struct_tag {
+                        self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                    }
                     self.typedefs.insert(name, Type::ptr_to(ty));
                     continue;
                 }
@@ -164,10 +173,16 @@ impl<'a> Parser<'a> {
                     self.expect(TokenKind::RBracket);
                     self.expect(TokenKind::Semicolon);
                     let arr_ty = Type { kind: crate::types::TypeKind::Array(Box::new(ty), size), is_unsigned: false };
+                    if let Some(ref tag) = self.last_struct_tag {
+                        self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                    }
                     self.typedefs.insert(name, arr_ty);
                     continue;
                 }
                 self.expect(TokenKind::Semicolon);
+                if let Some(ref tag) = self.last_struct_tag {
+                    self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                }
                 self.typedefs.insert(name, ty);
                 continue;
             }
@@ -417,6 +432,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+        self.last_struct_tag = tag_name.clone();
 
         // Parse body if present
         if self.current().kind == TokenKind::LBrace {
@@ -592,8 +608,8 @@ impl<'a> Parser<'a> {
             // Register tag if present
             if let Some(ref tag) = tag_name {
                 self.struct_tags.insert(tag.clone(), ty.clone());
-                // Update typedefs that may reference a forward-declared (empty) version
-                self.update_typedefs_with_struct(&ty);
+                // Update typedefs that reference this specific struct tag
+                self.update_typedefs_for_tag(tag, &ty);
             }
             ty
         } else if let Some(ref tag) = tag_name {
@@ -618,15 +634,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Update all typedef types that contain an empty struct with the full definition.
-    /// This handles the case where a typedef references a forward-declared struct
-    /// that is later fully defined.
-    fn update_typedefs_with_struct(&mut self, full_ty: &Type) {
-        let keys: Vec<String> = self.typedefs.keys().cloned().collect();
-        for key in keys {
-            let ty = self.typedefs.get(&key).unwrap().clone();
+    /// Update typedefs that reference a specific struct tag with the full definition.
+    fn update_typedefs_for_tag(&mut self, tag: &str, full_ty: &Type) {
+        // Find all typedef names that reference this struct tag
+        let typedef_names: Vec<String> = self.typedef_struct_tags.iter()
+            .filter(|(_, v)| *v == tag)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for name in typedef_names {
+            let ty = self.typedefs.get(&name).unwrap().clone();
             if let Some(updated) = Self::replace_empty_struct(&ty, full_ty) {
-                self.typedefs.insert(key, updated);
+                self.typedefs.insert(name, updated);
             }
         }
     }
@@ -635,7 +653,6 @@ impl<'a> Parser<'a> {
     fn replace_empty_struct(ty: &Type, full_ty: &Type) -> Option<Type> {
         match &ty.kind {
             TypeKind::Struct(members) if members.is_empty() => {
-                // Replace empty struct with full definition
                 if let TypeKind::Struct(full_members) = &full_ty.kind {
                     if !full_members.is_empty() {
                         return Some(full_ty.clone());
@@ -644,24 +661,16 @@ impl<'a> Parser<'a> {
                 None
             }
             TypeKind::Ptr(base) => {
-                if let Some(updated) = Self::replace_empty_struct(base, full_ty) {
-                    Some(Type {
-                        kind: TypeKind::Ptr(Box::new(updated)),
-                        is_unsigned: ty.is_unsigned,
-                    })
-                } else {
-                    None
-                }
+                Self::replace_empty_struct(base, full_ty).map(|updated| Type {
+                    kind: TypeKind::Ptr(Box::new(updated)),
+                    is_unsigned: ty.is_unsigned,
+                })
             }
             TypeKind::Array(base, size) => {
-                if let Some(updated) = Self::replace_empty_struct(base, full_ty) {
-                    Some(Type {
-                        kind: TypeKind::Array(Box::new(updated), *size),
-                        is_unsigned: ty.is_unsigned,
-                    })
-                } else {
-                    None
-                }
+                Self::replace_empty_struct(base, full_ty).map(|updated| Type {
+                    kind: TypeKind::Array(Box::new(updated), *size),
+                    is_unsigned: ty.is_unsigned,
+                })
             }
             _ => None,
         }
@@ -1232,6 +1241,9 @@ impl<'a> Parser<'a> {
                     }
                     self.skip_attribute();
                     self.expect(TokenKind::Semicolon);
+                    if let Some(ref tag) = self.last_struct_tag {
+                        self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                    }
                     self.typedefs.insert(name, Type::ptr_to(ty));
                     Stmt::Block(vec![])
                 } else {
@@ -1257,10 +1269,16 @@ impl<'a> Parser<'a> {
                         self.expect(TokenKind::RBracket);
                         self.expect(TokenKind::Semicolon);
                         let arr_ty = Type { kind: crate::types::TypeKind::Array(Box::new(ty), size), is_unsigned: false };
+                        if let Some(ref tag) = self.last_struct_tag {
+                            self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                        }
                         self.typedefs.insert(name, arr_ty);
                         Stmt::Block(vec![])
                     } else {
                         self.expect(TokenKind::Semicolon);
+                        if let Some(ref tag) = self.last_struct_tag {
+                            self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                        }
                         self.typedefs.insert(name, ty);
                         Stmt::Block(vec![])
                     }
