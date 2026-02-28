@@ -94,6 +94,47 @@ impl<'a> Parser<'a> {
                     body: Box::new(body),
                 }
             }
+            TokenKind::For => {
+                self.advance();
+                self.expect(TokenKind::LParen);
+
+                // init
+                let init = if self.current().kind == TokenKind::Semicolon {
+                    self.advance();
+                    None
+                } else if self.current().kind == TokenKind::Int {
+                    Some(Box::new(self.var_decl()))
+                } else {
+                    let expr = self.expr();
+                    self.expect(TokenKind::Semicolon);
+                    Some(Box::new(Stmt::ExprStmt(expr)))
+                };
+
+                // cond
+                let cond = if self.current().kind == TokenKind::Semicolon {
+                    None
+                } else {
+                    Some(self.expr())
+                };
+                self.expect(TokenKind::Semicolon);
+
+                // inc
+                let inc = if self.current().kind == TokenKind::RParen {
+                    None
+                } else {
+                    Some(self.expr())
+                };
+                self.expect(TokenKind::RParen);
+
+                let body = self.stmt();
+
+                Stmt::For {
+                    init,
+                    cond,
+                    inc,
+                    body: Box::new(body),
+                }
+            }
             TokenKind::Int => {
                 self.var_decl()
             }

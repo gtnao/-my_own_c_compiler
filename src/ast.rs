@@ -54,6 +54,12 @@ pub enum Stmt {
         cond: Expr,
         body: Box<Stmt>,
     },
+    For {
+        init: Option<Box<Stmt>>,
+        cond: Option<Expr>,
+        inc: Option<Expr>,
+        body: Box<Stmt>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

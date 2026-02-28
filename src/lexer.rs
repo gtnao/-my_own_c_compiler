@@ -37,6 +37,7 @@ impl<'a> Lexer<'a> {
                     "if" => TokenKind::If,
                     "else" => TokenKind::Else,
                     "while" => TokenKind::While,
+                    "for" => TokenKind::For,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });

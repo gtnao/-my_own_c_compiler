@@ -87,6 +87,11 @@ assert 4 'int main() { int a = 0; if (1) a = 4; return a; }'
 assert 10 'int main() { int i = 0; while (i < 10) i = i + 1; return i; }'
 assert 0 'int main() { int i = 0; while (i > 0) i = i - 1; return i; }'
 
+# Step 2.6: for statement
+assert 45 'int main() { int s = 0; int i; for (i = 0; i < 10; i = i + 1) s = s + i; return s; }'
+assert 10 'int main() { int i = 0; for (;i < 10;) i = i + 1; return i; }'
+assert 55 'int main() { int s = 0; int i; for (i = 1; i <= 10; i = i + 1) s = s + i; return s; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

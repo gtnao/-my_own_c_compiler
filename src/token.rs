@@ -8,6 +8,7 @@ pub enum TokenKind {
     If,
     Else,
     While,
+    For,
     // Operators
     Plus,
     Minus,
