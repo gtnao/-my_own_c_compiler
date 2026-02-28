@@ -7,6 +7,7 @@ pub enum TypeKind {
     Short,
     Int,
     Long,
+    Ptr(Box<Type>),
 }
 
 /// Type representation with signedness.
@@ -24,6 +25,9 @@ impl Type {
     pub fn short_type() -> Self { Self { kind: TypeKind::Short, is_unsigned: false } }
     pub fn int_type() -> Self { Self { kind: TypeKind::Int, is_unsigned: false } }
     pub fn long_type() -> Self { Self { kind: TypeKind::Long, is_unsigned: false } }
+
+    // Pointer constructor
+    pub fn ptr_to(base: Type) -> Self { Self { kind: TypeKind::Ptr(Box::new(base)), is_unsigned: false } }
 
     // Unsigned constructors
     pub fn uchar() -> Self { Self { kind: TypeKind::Char, is_unsigned: true } }
@@ -54,6 +58,7 @@ impl Type {
             TypeKind::Short => 2,
             TypeKind::Int => 4,
             TypeKind::Long => 8,
+            TypeKind::Ptr(_) => 8,
         }
     }
 
@@ -66,7 +71,21 @@ impl Type {
             TypeKind::Short => 2,
             TypeKind::Int => 4,
             TypeKind::Long => 8,
+            TypeKind::Ptr(_) => 8,
         }
+    }
+
+    /// Returns the base type of a pointer, or None if not a pointer.
+    pub fn base_type(&self) -> Option<&Type> {
+        match &self.kind {
+            TypeKind::Ptr(base) => Some(base),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this is a pointer type.
+    pub fn is_pointer(&self) -> bool {
+        matches!(self.kind, TypeKind::Ptr(_))
     }
 }
 

@@ -60,6 +60,10 @@ impl<'a> Parser<'a> {
         while Self::is_type_keyword(&self.tokens[i].kind) {
             i += 1;
         }
+        // Skip pointer stars
+        while self.tokens[i].kind == TokenKind::Star {
+            i += 1;
+        }
         if let TokenKind::Ident(_) = &self.tokens[i].kind {
             return self.tokens[i + 1].kind == TokenKind::LParen;
         }
@@ -92,7 +96,7 @@ impl<'a> Parser<'a> {
             false
         };
 
-        match self.current().kind {
+        let mut ty = match self.current().kind {
             TokenKind::Int => {
                 self.advance();
                 if is_unsigned { Type::uint() } else { Type::int_type() }
@@ -128,7 +132,15 @@ impl<'a> Parser<'a> {
                     );
                 }
             }
+        };
+
+        // Parse pointer stars: type "*"*
+        while self.current().kind == TokenKind::Star {
+            self.advance();
+            ty = Type::ptr_to(ty);
         }
+
+        ty
     }
 
     // function_or_prototype = type ident "(" params? ")" ("{" stmt* "}" | ";")
@@ -784,7 +796,7 @@ impl<'a> Parser<'a> {
         node
     }
 
-    // unary = ("+" | "-") unary | "++" unary | "--" unary | postfix
+    // unary = ("+" | "-" | "&" | "*") unary | "++" unary | "--" unary | postfix
     fn unary(&mut self) -> Expr {
         match self.current().kind {
             TokenKind::Plus => {
@@ -798,6 +810,16 @@ impl<'a> Parser<'a> {
                     op: UnaryOp::Neg,
                     operand: Box::new(operand),
                 }
+            }
+            TokenKind::Amp => {
+                self.advance();
+                let operand = self.unary();
+                Expr::Addr(Box::new(operand))
+            }
+            TokenKind::Star => {
+                self.advance();
+                let operand = self.unary();
+                Expr::Deref(Box::new(operand))
             }
             TokenKind::Bang => {
                 self.advance();

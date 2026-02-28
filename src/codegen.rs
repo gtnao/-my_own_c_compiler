@@ -113,7 +113,7 @@ impl Codegen {
                 TypeKind::Int => {
                     self.emit(&format!("  movl {}, -{}(%rbp)", arg_regs_32[i], offset));
                 }
-                TypeKind::Long => {
+                TypeKind::Long | TypeKind::Ptr(_) => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
                 TypeKind::Void => {}
@@ -317,8 +317,24 @@ impl Codegen {
                     Expr::Var(name) => {
                         self.emit_store_var(name);
                     }
+                    Expr::Deref(_) => {
+                        self.push(); // save rhs value
+                        self.gen_addr(lhs);
+                        self.emit("  mov %rax, %rdi"); // address in %rdi
+                        self.pop("%rax"); // value in %rax
+                        let ty = self.expr_type(lhs);
+                        self.emit_store_indirect(&ty);
+                    }
                     _ => {}
                 }
+            }
+            Expr::Addr(inner) => {
+                self.gen_addr(inner);
+            }
+            Expr::Deref(inner) => {
+                self.gen_expr(inner);
+                let ty = self.expr_type(expr);
+                self.emit_load_indirect(&ty);
             }
             Expr::UnaryOp { op, operand } => {
                 self.gen_expr(operand);
@@ -471,7 +487,7 @@ impl Codegen {
                     TypeKind::Short => self.emit("  movswq %ax, %rax"),
                     TypeKind::Int if ty.is_unsigned => self.emit("  movl %eax, %eax"),
                     TypeKind::Int => self.emit("  movslq %eax, %rax"),
-                    TypeKind::Long | TypeKind::Void => {} // no-op
+                    TypeKind::Long | TypeKind::Void | TypeKind::Ptr(_) => {} // no-op
                 }
             }
             Expr::BinOp { op, lhs, rhs } => {
@@ -551,6 +567,72 @@ impl Codegen {
         }
     }
 
+    /// Compute the address of an lvalue expression into %rax.
+    fn gen_addr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Var(name) => {
+                if self.globals.contains(name) {
+                    self.emit(&format!("  lea {}(%rip), %rax", name));
+                } else {
+                    let offset = self.locals[name];
+                    self.emit(&format!("  lea -{}(%rbp), %rax", offset));
+                }
+            }
+            Expr::Deref(inner) => {
+                // Address of *p is just the value of p
+                self.gen_expr(inner);
+            }
+            _ => {}
+        }
+    }
+
+    /// Infer the type of an expression (best effort).
+    fn expr_type(&self, expr: &Expr) -> Type {
+        match expr {
+            Expr::Var(name) => self.get_var_type(name),
+            Expr::Deref(inner) => {
+                let inner_ty = self.expr_type(inner);
+                match inner_ty.kind {
+                    TypeKind::Ptr(base) => *base,
+                    _ => Type::long_type(),
+                }
+            }
+            Expr::Addr(inner) => {
+                let inner_ty = self.expr_type(inner);
+                Type::ptr_to(inner_ty)
+            }
+            _ => Type::long_type(),
+        }
+    }
+
+    /// Load a value from the address in %rax, based on the given type.
+    fn emit_load_indirect(&mut self, ty: &Type) {
+        match ty.kind {
+            TypeKind::Bool => self.emit("  movzbl (%rax), %eax"),
+            TypeKind::Char if ty.is_unsigned => self.emit("  movzbl (%rax), %eax"),
+            TypeKind::Char => self.emit("  movsbq (%rax), %rax"),
+            TypeKind::Short if ty.is_unsigned => self.emit("  movzwl (%rax), %eax"),
+            TypeKind::Short => self.emit("  movswq (%rax), %rax"),
+            TypeKind::Int if ty.is_unsigned => self.emit("  movl (%rax), %eax"),
+            TypeKind::Int => self.emit("  movslq (%rax), %rax"),
+            _ => self.emit("  mov (%rax), %rax"), // long, ptr
+        }
+    }
+
+    /// Store %rax to the address in %rdi, based on the given type.
+    fn emit_store_indirect(&mut self, ty: &Type) {
+        if ty.kind == TypeKind::Bool {
+            self.emit("  cmp $0, %rax");
+            self.emit("  setne %al");
+        }
+        match ty.kind {
+            TypeKind::Bool | TypeKind::Char => self.emit("  movb %al, (%rdi)"),
+            TypeKind::Short => self.emit("  movw %ax, (%rdi)"),
+            TypeKind::Int => self.emit("  movl %eax, (%rdi)"),
+            _ => self.emit("  mov %rax, (%rdi)"), // long, ptr
+        }
+    }
+
     fn get_or_create_goto_label(&mut self, name: &str) -> String {
         if let Some(label) = self.goto_labels.get(name) {
             label.clone()
@@ -583,7 +665,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movswq {}(%rip), %rax", name)),
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl {}(%rip), %eax", name)),
                 TypeKind::Int => self.emit(&format!("  movslq {}(%rip), %rax", name)),
-                TypeKind::Long => self.emit(&format!("  mov {}(%rip), %rax", name)),
+                TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov {}(%rip), %rax", name)),
                 TypeKind::Void => {}
             }
         } else {
@@ -596,7 +678,7 @@ impl Codegen {
                 TypeKind::Short => self.emit(&format!("  movswq -{}(%rbp), %rax", offset)),
                 TypeKind::Int if ty.is_unsigned => self.emit(&format!("  movl -{}(%rbp), %eax", offset)),
                 TypeKind::Int => self.emit(&format!("  movslq -{}(%rbp), %rax", offset)),
-                TypeKind::Long => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
+                TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov -{}(%rbp), %rax", offset)),
                 TypeKind::Void => {}
             }
         }
@@ -614,7 +696,7 @@ impl Codegen {
                 TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %al, {}(%rip)", name)),
                 TypeKind::Short => self.emit(&format!("  movw %ax, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, {}(%rip)", name)),
-                TypeKind::Long => self.emit(&format!("  mov %rax, {}(%rip)", name)),
+                TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, {}(%rip)", name)),
                 TypeKind::Void => {}
             }
         } else {
@@ -623,7 +705,7 @@ impl Codegen {
                 TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %al, -{}(%rbp)", offset)),
                 TypeKind::Short => self.emit(&format!("  movw %ax, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %eax, -{}(%rbp)", offset)),
-                TypeKind::Long => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
+                TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rax, -{}(%rbp)", offset)),
                 TypeKind::Void => {}
             }
         }
@@ -641,7 +723,7 @@ impl Codegen {
                 TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %dil, {}(%rip)", name)),
                 TypeKind::Short => self.emit(&format!("  movw %di, {}(%rip)", name)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, {}(%rip)", name)),
-                TypeKind::Long => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
+                TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, {}(%rip)", name)),
                 TypeKind::Void => {}
             }
         } else {
@@ -650,7 +732,7 @@ impl Codegen {
                 TypeKind::Bool | TypeKind::Char => self.emit(&format!("  movb %dil, -{}(%rbp)", offset)),
                 TypeKind::Short => self.emit(&format!("  movw %di, -{}(%rbp)", offset)),
                 TypeKind::Int => self.emit(&format!("  movl %edi, -{}(%rbp)", offset)),
-                TypeKind::Long => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
+                TypeKind::Long | TypeKind::Ptr(_) => self.emit(&format!("  mov %rdi, -{}(%rbp)", offset)),
                 TypeKind::Void => {}
             }
         }

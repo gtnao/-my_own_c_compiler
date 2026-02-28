@@ -253,6 +253,12 @@ assert 1 'int main() { return (_Bool)42; }'
 assert 0 'int main() { return (_Bool)0; }'
 assert 1 'int main() { return sizeof(_Bool); }'
 
+# Step 5.1: address-of and dereference
+assert 3 'int main() { int a = 3; int *p = &a; return *p; }'
+assert 10 'int main() { int a = 5; int *p = &a; *p = 10; return a; }'
+assert 3 'int main() { int a = 3; return *&a; }'
+assert 5 'int main() { int x = 5; int *p = &x; int **pp = &p; return **pp; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
