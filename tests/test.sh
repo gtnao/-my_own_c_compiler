@@ -864,6 +864,14 @@ assert 8 'int main() { return sizeof(uint64_t); }'
 assert 8 'int main() { return sizeof(size_t); }'
 assert 8 'int main() { return sizeof(ptrdiff_t); }'
 
+# Step 14.29: Fix increment/decrement through arrow and forward-declared struct members
+assert 3 'extern void *malloc(unsigned long); extern void *memset(void *, int, unsigned long); typedef struct { int length; } List; int main() { List *l = (List *)malloc(sizeof(List)); memset(l, 0, sizeof(List)); l->length++; l->length++; l->length++; return l->length; }'
+assert 2 'extern void *malloc(unsigned long); extern void *memset(void *, int, unsigned long); typedef struct { int val; } S; int main() { S *p = (S *)malloc(sizeof(S)); memset(p, 0, sizeof(S)); ++p->val; ++p->val; return p->val; }'
+assert 56 'extern void *malloc(unsigned long); extern void *memset(void *, int, unsigned long); typedef struct { int val; } S; int main() { S *p = (S *)malloc(sizeof(S)); memset(p, 0, sizeof(S)); p->val = 5; int old = p->val++; return old * 10 + p->val; }'
+assert 3 'int main() { int a[2]; a[0] = 3; a[1] = 5; int *p = a; return (*p)++; }'
+assert 4 'int main() { int a[2]; a[0] = 3; a[1] = 5; int *p = a; (*p)++; return *p; }'
+assert 42 'struct Node; typedef struct Node Node; struct Node { int val; Node *next; }; extern void *malloc(unsigned long); int main() { Node *a = (Node *)malloc(sizeof(Node)); Node *b = (Node *)malloc(sizeof(Node)); a->val = 10; a->next = b; b->val = 42; b->next = 0; return a->next->val; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

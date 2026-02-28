@@ -612,34 +612,47 @@ impl Codegen {
                 self.emit(&format!("{}:", end_label));
             }
             Expr::PreInc(operand) => {
-                if let Expr::Var(name) = operand.as_ref() {
-                    self.emit_load_var(name);
-                    self.emit("  add $1, %rax");
-                    self.emit_store_var(name);
-                }
+                // addr → load → add 1 → store → result = new value
+                self.gen_addr(operand);
+                self.push(); // save addr
+                let ty = self.expr_type(operand);
+                self.emit_load_indirect(&ty);
+                self.emit("  add $1, %rax");
+                self.pop("%rdi"); // addr in %rdi
+                self.emit_store_indirect(&ty); // store new value
+                // %rax still has new value
             }
             Expr::PreDec(operand) => {
-                if let Expr::Var(name) = operand.as_ref() {
-                    self.emit_load_var(name);
-                    self.emit("  sub $1, %rax");
-                    self.emit_store_var(name);
-                }
+                self.gen_addr(operand);
+                self.push();
+                let ty = self.expr_type(operand);
+                self.emit_load_indirect(&ty);
+                self.emit("  sub $1, %rax");
+                self.pop("%rdi");
+                self.emit_store_indirect(&ty);
             }
             Expr::PostInc(operand) => {
-                if let Expr::Var(name) = operand.as_ref() {
-                    self.emit_load_var(name);
-                    self.emit("  mov %rax, %rdi");
-                    self.emit("  add $1, %rdi");
-                    self.emit_store_var_from_rdi(name);
-                }
+                // addr → load old → save old → inc → store new → return old
+                self.gen_addr(operand);
+                self.push(); // save addr (%rax still = addr)
+                let ty = self.expr_type(operand);
+                self.emit_load_indirect(&ty); // old value in %rax
+                self.emit("  mov %rax, %rcx"); // old value in %rcx
+                self.emit("  add $1, %rax"); // new value in %rax
+                self.pop("%rdi"); // addr in %rdi
+                self.emit_store_indirect(&ty); // store new value
+                self.emit("  mov %rcx, %rax"); // return old value
             }
             Expr::PostDec(operand) => {
-                if let Expr::Var(name) = operand.as_ref() {
-                    self.emit_load_var(name);
-                    self.emit("  mov %rax, %rdi");
-                    self.emit("  sub $1, %rdi");
-                    self.emit_store_var_from_rdi(name);
-                }
+                self.gen_addr(operand);
+                self.push();
+                let ty = self.expr_type(operand);
+                self.emit_load_indirect(&ty);
+                self.emit("  mov %rax, %rcx"); // old value
+                self.emit("  sub $1, %rax"); // new value
+                self.pop("%rdi");
+                self.emit_store_indirect(&ty);
+                self.emit("  mov %rcx, %rax"); // return old value
             }
             Expr::FuncCall { name, args } => {
                 self.gen_call(args, |codegen| {
