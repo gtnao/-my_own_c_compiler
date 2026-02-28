@@ -38,6 +38,7 @@ pub enum TokenKind {
     Alignof,
     Alignas,
     Generic,
+    Attribute,
     // Operators
     Plus,
     PlusPlus,

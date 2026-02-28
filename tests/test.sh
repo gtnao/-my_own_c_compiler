@@ -706,6 +706,11 @@ assert 1 'int main() { double a = 2.0; double b = 2.0; return a >= b; }'
 assert 10 'int main() { double a = 10.7; return (int)a; }'
 assert 42 'int main() { float f = 42.0; return (int)f; }'
 
+# Step 14.3: __attribute__ support (silently ignored)
+assert 42 'int main() __attribute__((unused)) { return 42; }'
+assert 5 '__attribute__((unused)) int main() { return 5; }'
+assert 3 'int __attribute__((noinline)) add(int a, int b) { return a + b; } int main() { return add(1, 2); }'
+
 # Step 12.2: Struct value copy and pass/return
 assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
 assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'

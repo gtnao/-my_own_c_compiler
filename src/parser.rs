@@ -104,7 +104,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_type_keyword(kind: &TokenKind) -> bool {
-        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw)
+        matches!(kind, TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Void | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute)
     }
 
     fn is_type_start(&self, kind: &TokenKind) -> bool {
@@ -146,9 +146,9 @@ impl<'a> Parser<'a> {
                         i += 1;
                     }
                 }
-            } else if self.tokens[i].kind == TokenKind::Alignas {
-                // Skip _Alignas(...)
-                i += 1; // _Alignas
+            } else if self.tokens[i].kind == TokenKind::Alignas || self.tokens[i].kind == TokenKind::Attribute {
+                // Skip _Alignas(...) or __attribute__((...))
+                i += 1;
                 if self.tokens[i].kind == TokenKind::LParen {
                     i += 1;
                     let mut depth = 1;
@@ -486,6 +486,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Type {
+        // Skip __attribute__ before type
+        self.skip_attribute();
         // Skip type qualifiers (const, volatile) and _Alignas
         while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas) {
             if self.current().kind == TokenKind::Alignas {
@@ -640,6 +642,8 @@ impl<'a> Parser<'a> {
             }
             ty = Type::ptr_to(ty);
         }
+        // Skip trailing __attribute__
+        self.skip_attribute();
 
         ty
     }
@@ -751,6 +755,8 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect(TokenKind::RParen);
+        // Skip __attribute__ after parameter list
+        self.skip_attribute();
 
         // Forward declaration (prototype): ends with ";"
         if self.current().kind == TokenKind::Semicolon {
@@ -995,7 +1001,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw => {
+            TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute => {
                 self.var_decl()
             }
             _ => {
@@ -2220,6 +2226,26 @@ impl<'a> Parser<'a> {
 
     fn advance(&mut self) {
         self.pos += 1;
+    }
+
+    /// Skip __attribute__((...)) if present. May appear multiple times.
+    fn skip_attribute(&mut self) {
+        while self.current().kind == TokenKind::Attribute {
+            self.advance(); // __attribute__
+            if self.current().kind == TokenKind::LParen {
+                self.advance(); // outer (
+                let mut depth = 1;
+                while depth > 0 {
+                    match self.current().kind {
+                        TokenKind::LParen => depth += 1,
+                        TokenKind::RParen => depth -= 1,
+                        TokenKind::Eof => break,
+                        _ => {}
+                    }
+                    self.advance();
+                }
+            }
+        }
     }
 
     fn expect(&mut self, kind: TokenKind) {

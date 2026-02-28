@@ -86,6 +86,7 @@ impl<'a> Lexer<'a> {
                     "_Alignof" => TokenKind::Alignof,
                     "_Alignas" => TokenKind::Alignas,
                     "_Generic" => TokenKind::Generic,
+                    "__attribute__" => TokenKind::Attribute,
                     _ => TokenKind::Ident(word),
                 };
                 tokens.push(Token { kind, pos });
