@@ -164,9 +164,18 @@ impl Codegen {
                 TypeKind::Long | TypeKind::Ptr(_) => {
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
                 }
-                TypeKind::Array(_, _) | TypeKind::Struct(_) => {
-                    // Array/struct params treated as pointers (8 bytes)
+                TypeKind::Array(_, _) => {
+                    // Array params treated as pointers (8 bytes)
                     self.emit(&format!("  mov {}, -{}(%rbp)", arg_regs_64[i], offset));
+                }
+                TypeKind::Struct(_) => {
+                    // Struct pass-by-value: register holds pointer to caller's struct,
+                    // copy the struct data into local stack space
+                    let size = ty.size();
+                    self.emit(&format!("  mov {}, %rsi", arg_regs_64[i])); // src = caller's struct address
+                    self.emit(&format!("  lea -{}(%rbp), %rdi", offset)); // dst = local struct space
+                    self.emit(&format!("  mov ${}, %rcx", size));
+                    self.emit("  rep movsb");
                 }
                 TypeKind::Void => {}
             }
@@ -373,20 +382,34 @@ impl Codegen {
                 self.emit_load_var(name);
             }
             Expr::Assign { lhs, rhs } => {
-                self.gen_expr(rhs);
-                match lhs.as_ref() {
-                    Expr::Var(name) => {
-                        self.emit_store_var(name);
+                let lhs_ty = self.expr_type(lhs);
+                if let TypeKind::Struct(_) = &lhs_ty.kind {
+                    // Struct assignment: get addresses of both sides and memcpy
+                    self.gen_addr(rhs);
+                    self.push(); // save rhs address
+                    self.gen_addr(lhs);
+                    self.emit("  mov %rax, %rdi"); // dst address
+                    self.pop("%rsi"); // src address
+                    self.emit(&format!("  mov ${}, %rcx", lhs_ty.size()));
+                    self.emit("  rep movsb");
+                    // Leave dst address in %rax for chained assignment
+                    self.gen_addr(lhs);
+                } else {
+                    self.gen_expr(rhs);
+                    match lhs.as_ref() {
+                        Expr::Var(name) => {
+                            self.emit_store_var(name);
+                        }
+                        Expr::Deref(_) | Expr::Member(_, _) => {
+                            self.push(); // save rhs value
+                            self.gen_addr(lhs);
+                            self.emit("  mov %rax, %rdi"); // address in %rdi
+                            self.pop("%rax"); // value in %rax
+                            let ty = self.expr_type(lhs);
+                            self.emit_store_indirect(&ty);
+                        }
+                        _ => {}
                     }
-                    Expr::Deref(_) | Expr::Member(_, _) => {
-                        self.push(); // save rhs value
-                        self.gen_addr(lhs);
-                        self.emit("  mov %rax, %rdi"); // address in %rdi
-                        self.pop("%rax"); // value in %rax
-                        let ty = self.expr_type(lhs);
-                        self.emit_store_indirect(&ty);
-                    }
-                    _ => {}
                 }
             }
             Expr::Addr(inner) => {
@@ -395,7 +418,11 @@ impl Codegen {
             Expr::Deref(inner) => {
                 self.gen_expr(inner);
                 let ty = self.expr_type(expr);
-                self.emit_load_indirect(&ty);
+                if let TypeKind::Struct(_) = &ty.kind {
+                    // Struct deref: leave address in %rax
+                } else {
+                    self.emit_load_indirect(&ty);
+                }
             }
             Expr::UnaryOp { op, operand } => {
                 self.gen_expr(operand);
@@ -549,7 +576,11 @@ impl Codegen {
             Expr::Member(_, _) => {
                 self.gen_addr(expr);
                 let ty = self.expr_type(expr);
-                self.emit_load_indirect(&ty);
+                if let TypeKind::Struct(_) = &ty.kind {
+                    // Struct member: leave address in %rax (like array decay)
+                } else {
+                    self.emit_load_indirect(&ty);
+                }
             }
             Expr::StrLit(s) => {
                 let idx = self.string_literals.len();
@@ -897,6 +928,15 @@ impl Codegen {
 
     /// Store %rax to the address in %rdi, based on the given type.
     fn emit_store_indirect(&mut self, ty: &Type) {
+        if let TypeKind::Struct(_) = &ty.kind {
+            // Struct copy: %rax = src address, %rdi = dst address
+            // Use rep movsb to copy struct bytes
+            self.emit("  mov %rax, %rsi"); // src
+            let size = ty.size();
+            self.emit(&format!("  mov ${}, %rcx", size));
+            self.emit("  rep movsb");
+            return;
+        }
         if ty.kind == TypeKind::Bool {
             self.emit("  cmp $0, %rax");
             self.emit("  setne %al");
@@ -975,6 +1015,20 @@ impl Codegen {
 
     fn emit_store_var(&mut self, name: &str) {
         let ty = self.get_var_type(name);
+        // Struct copy: %rax = source address, copy to variable location
+        if let TypeKind::Struct(_) = &ty.kind {
+            let size = ty.size();
+            self.emit("  mov %rax, %rsi"); // src address
+            if self.globals.contains(name) {
+                self.emit(&format!("  lea {}(%rip), %rdi", name));
+            } else {
+                let offset = self.locals[name];
+                self.emit(&format!("  lea -{}(%rbp), %rdi", offset));
+            }
+            self.emit(&format!("  mov ${}, %rcx", size));
+            self.emit("  rep movsb");
+            return;
+        }
         if ty.kind == TypeKind::Bool {
             // Normalize to 0/1: cmp $0, %rax; setne %al
             self.emit("  cmp $0, %rax");

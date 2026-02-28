@@ -645,6 +645,17 @@ assert 7 'int add(int a, int b) { return a + b; } int main() { int (*fp)(int, in
 assert 2 'int sub(int a, int b) { return a - b; } int main() { int (*fp)(int, int) = sub; return fp(5, 3); }'
 assert 42 'int ret42() { return 42; } int main() { int (*fp)() = ret42; return fp(); }'
 
+# Step 12.2: Struct value copy and pass/return
+assert 3 'int main() { struct { int x; int y; } s1; s1.x = 1; s1.y = 2; struct { int x; int y; } s2; s2.x = 0; s2.y = 0; s2 = s1; return s2.x + s2.y; }'
+assert 10 'struct P { int x; int y; }; int main() { struct P a; a.x = 3; a.y = 7; struct P b; b = a; return b.x + b.y; }'
+# Struct return from function
+assert 3 'struct P { int x; int y; }; struct P make() { struct P p; p.x = 1; p.y = 2; return p; } int main() { struct P r = make(); return r.x + r.y; }'
+# Struct pass by value (original not modified)
+assert 7 'struct P { int x; int y; }; int sum(struct P p) { return p.x + p.y; } int main() { struct P a; a.x = 3; a.y = 4; return sum(a); }'
+assert 3 'struct P { int x; int y; }; void modify(struct P p) { p.x = 99; } int main() { struct P a; a.x = 3; a.y = 4; modify(a); return a.x; }'
+# Struct with char member
+assert 97 'struct S { char c; int n; }; int get(struct S s) { return s.c; } int main() { struct S s; s.c = 97; s.n = 42; return get(s); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"

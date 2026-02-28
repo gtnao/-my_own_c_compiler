@@ -166,6 +166,11 @@ impl<'a> Parser<'a> {
     fn global_var(&mut self) {
         // type ident ("[" num "]")* ";"
         let ty = self.parse_type();
+        // Handle standalone struct/union/enum definition: "struct Tag { ... };"
+        if self.current().kind == TokenKind::Semicolon {
+            self.advance();
+            return;
+        }
         let name = match &self.current().kind {
             TokenKind::Ident(s) => s.clone(),
             _ => {
