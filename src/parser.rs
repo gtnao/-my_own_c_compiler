@@ -701,23 +701,31 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
-        // Array declaration: ident ("[" num "]")*
-        let ty = {
+        // Array declaration: ident ("[" num? "]")*
+        let (ty, has_empty_bracket) = {
             let mut dims = Vec::new();
+            let mut has_empty = false;
             while self.current().kind == TokenKind::LBracket {
                 self.advance();
-                let len = match &self.current().kind {
-                    TokenKind::Num(n) => *n as usize,
-                    _ => {
-                        self.reporter.error_at(
-                            self.current().pos,
-                            "expected array size",
-                        );
-                    }
-                };
-                self.advance();
-                self.expect(TokenKind::RBracket);
-                dims.push(len);
+                if self.current().kind == TokenKind::RBracket {
+                    // Empty brackets: int a[] = {...}
+                    has_empty = true;
+                    self.advance();
+                    dims.push(0); // placeholder, will be filled from initializer
+                } else {
+                    let len = match &self.current().kind {
+                        TokenKind::Num(n) => *n as usize,
+                        _ => {
+                            self.reporter.error_at(
+                                self.current().pos,
+                                "expected array size",
+                            );
+                        }
+                    };
+                    self.advance();
+                    self.expect(TokenKind::RBracket);
+                    dims.push(len);
+                }
             }
             let mut ty = ty;
             // Build type from innermost to outermost:
@@ -725,19 +733,60 @@ impl<'a> Parser<'a> {
             for &len in dims.iter().rev() {
                 ty = Type::array_of(ty, len);
             }
-            ty
+            (ty, has_empty)
         };
+
+        // Handle initializer
+        if self.current().kind == TokenKind::Eq {
+            self.advance();
+            if self.current().kind == TokenKind::LBrace {
+                // Array initializer: = { expr, expr, ... }
+                self.advance();
+                let mut init_exprs = Vec::new();
+                while self.current().kind != TokenKind::RBrace {
+                    init_exprs.push(self.assign());
+                    if self.current().kind == TokenKind::Comma {
+                        self.advance();
+                    }
+                }
+                self.expect(TokenKind::RBrace);
+                self.expect(TokenKind::Semicolon);
+
+                // Determine array type (fill in size for empty brackets)
+                let ty = if has_empty_bracket {
+                    let base = ty.base_type().unwrap().clone();
+                    Type::array_of(base, init_exprs.len())
+                } else {
+                    ty
+                };
+
+                let unique = self.declare_var(&name, ty.clone());
+
+                // Generate: VarDecl + assignment for each element
+                let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty, init: None }];
+                for (i, init_expr) in init_exprs.into_iter().enumerate() {
+                    stmts.push(Stmt::ExprStmt(Expr::Assign {
+                        lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
+                            op: BinOp::Add,
+                            lhs: Box::new(Expr::Var(unique.clone())),
+                            rhs: Box::new(Expr::Num(i as i64)),
+                        }))),
+                        rhs: Box::new(init_expr),
+                    }));
+                }
+                return Stmt::Block(stmts);
+            } else {
+                // Normal initializer
+                let unique = self.declare_var(&name, ty.clone());
+                let init = Some(self.expr());
+                self.expect(TokenKind::Semicolon);
+                return Stmt::VarDecl { name: unique, ty, init };
+            }
+        }
 
         let unique = self.declare_var(&name, ty.clone());
-
-        let init = if self.current().kind == TokenKind::Eq {
-            self.advance();
-            Some(self.expr())
-        } else {
-            None
-        };
         self.expect(TokenKind::Semicolon);
-        Stmt::VarDecl { name: unique, ty, init }
+        Stmt::VarDecl { name: unique, ty, init: None }
     }
 
     // expr = assign ("," assign)*

@@ -395,6 +395,14 @@ assert 4 'int main() { typedef int MyInt; return sizeof(MyInt); }'
 assert 5 'typedef int MyInt; MyInt add(MyInt a, MyInt b) { return a + b; } int main() { return add(2, 3); }'
 assert 3 'int main() { typedef struct { int x; int y; } Point; Point p; p.x = 1; p.y = 2; return p.x + p.y; }'
 
+# Step 9.1: array initializer
+assert 1 'int main() { int a[3] = {1, 2, 3}; return a[0]; }'
+assert 2 'int main() { int a[3] = {1, 2, 3}; return a[1]; }'
+assert 3 'int main() { int a[3] = {1, 2, 3}; return a[2]; }'
+assert 6 'int main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }'
+assert 10 'int main() { int a[] = {1, 2, 3, 4}; return a[0] + a[1] + a[2] + a[3]; }'
+assert 4 'int main() { int a[] = {1, 2, 3, 4}; return sizeof(a) / sizeof(a[0]); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
