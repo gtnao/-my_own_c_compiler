@@ -791,6 +791,53 @@ impl<'a> Parser<'a> {
                     }
                 }
                 return Stmt::Block(stmts);
+            } else if matches!(self.current().kind, TokenKind::Str(_)) && (has_empty_bracket || matches!(ty.kind, crate::types::TypeKind::Array(_, _))) {
+                // String initializer for char array: char s[] = "hello";
+                let s = match &self.current().kind {
+                    TokenKind::Str(s) => s.clone(),
+                    _ => unreachable!(),
+                };
+                self.advance();
+                // Concatenate adjacent strings
+                let mut bytes = s;
+                while let TokenKind::Str(ref next) = self.current().kind {
+                    bytes.extend_from_slice(next);
+                    self.advance();
+                }
+                self.expect(TokenKind::Semicolon);
+
+                // Determine type (include null terminator)
+                let array_len = bytes.len() + 1; // +1 for null terminator
+                let ty = if has_empty_bracket {
+                    Type::array_of(Type::char_type(), array_len)
+                } else {
+                    ty
+                };
+
+                let unique = self.declare_var(&name, ty.clone());
+                let mut stmts = vec![Stmt::VarDecl { name: unique.clone(), ty, init: None }];
+
+                // Generate assignment for each byte + null terminator
+                for (i, &b) in bytes.iter().enumerate() {
+                    stmts.push(Stmt::ExprStmt(Expr::Assign {
+                        lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
+                            op: BinOp::Add,
+                            lhs: Box::new(Expr::Var(unique.clone())),
+                            rhs: Box::new(Expr::Num(i as i64)),
+                        }))),
+                        rhs: Box::new(Expr::Num(b as i64)),
+                    }));
+                }
+                // Null terminator
+                stmts.push(Stmt::ExprStmt(Expr::Assign {
+                    lhs: Box::new(Expr::Deref(Box::new(Expr::BinOp {
+                        op: BinOp::Add,
+                        lhs: Box::new(Expr::Var(unique.clone())),
+                        rhs: Box::new(Expr::Num(bytes.len() as i64)),
+                    }))),
+                    rhs: Box::new(Expr::Num(0)),
+                }));
+                return Stmt::Block(stmts);
             } else {
                 // Normal initializer
                 let unique = self.declare_var(&name, ty.clone());

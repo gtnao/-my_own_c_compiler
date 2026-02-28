@@ -444,6 +444,12 @@ assert_output '3 + 4 = 7' 'int printf(); int main() { printf("%d + %d = %d", 3, 
 assert 6 'int sum(int a[], int n) { int s = 0; int i; for (i = 0; i < n; i++) s += a[i]; return s; } int main() { int a[3] = {1, 2, 3}; return sum(a, 3); }'
 assert 3 'int first(int a[]) { return a[0]; } int main() { int a[3] = {3, 2, 1}; return first(a); }'
 
+# Step 12.3: string initialization for char arrays
+assert 104 'int main() { char s[] = "hello"; return s[0]; }'
+assert 111 'int main() { char s[] = "hello"; return s[4]; }'
+assert 0 'int main() { char s[] = "hello"; return s[5]; }'
+assert 6 'int main() { char s[] = "hello"; return sizeof(s); }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
