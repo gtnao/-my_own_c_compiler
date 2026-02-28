@@ -24,9 +24,67 @@ fn preprocess_recursive(
 ) -> String {
     let dir = Path::new(file_path).parent().unwrap_or(Path::new("."));
     let mut result = String::new();
+    // Conditional compilation stack: true = active, false = skipped
+    let mut cond_stack: Vec<bool> = Vec::new();
 
     for line in source.lines() {
         let trimmed = line.trim();
+
+        // Handle conditional compilation directives (even in skipped regions)
+        if trimmed.starts_with("#ifdef") {
+            let name = trimmed["#ifdef".len()..].trim();
+            let active = cond_stack.last().copied().unwrap_or(true) && macros.contains_key(name);
+            cond_stack.push(active);
+            continue;
+        }
+        if trimmed.starts_with("#ifndef") {
+            let name = trimmed["#ifndef".len()..].trim();
+            let active = cond_stack.last().copied().unwrap_or(true) && !macros.contains_key(name);
+            cond_stack.push(active);
+            continue;
+        }
+        if trimmed.starts_with("#if ") {
+            let cond_str = trimmed["#if".len()..].trim();
+            // Simple: evaluate as "0" or non-zero
+            let val = evaluate_simple_cond(cond_str, macros);
+            let active = cond_stack.last().copied().unwrap_or(true) && val;
+            cond_stack.push(active);
+            continue;
+        }
+        if trimmed.starts_with("#elif") {
+            let cond_str = trimmed["#elif".len()..].trim();
+            let len = cond_stack.len();
+            if len > 0 {
+                let current = cond_stack[len - 1];
+                if current {
+                    // Previous branch was taken, skip this one
+                    cond_stack[len - 1] = false;
+                } else {
+                    let parent_active = if len > 1 { cond_stack[len - 2] } else { true };
+                    let val = evaluate_simple_cond(cond_str, macros);
+                    cond_stack[len - 1] = parent_active && val;
+                }
+            }
+            continue;
+        }
+        if trimmed == "#else" {
+            let len = cond_stack.len();
+            if len > 0 {
+                let current = cond_stack[len - 1];
+                let parent_active = if len > 1 { cond_stack[len - 2] } else { true };
+                cond_stack[len - 1] = parent_active && !current;
+            }
+            continue;
+        }
+        if trimmed == "#endif" {
+            cond_stack.pop();
+            continue;
+        }
+
+        // Skip lines in inactive conditional regions
+        if cond_stack.last().copied().unwrap_or(true) == false {
+            continue;
+        }
 
         if trimmed.starts_with("#include") {
             let rest = trimmed["#include".len()..].trim();
@@ -235,6 +293,63 @@ fn parse_macro_args(input: &str) -> Vec<String> {
         args.push(trimmed);
     }
     args
+}
+
+/// Evaluate a simple conditional expression for #if / #elif.
+/// Supports: integer literals, defined(NAME), and basic comparisons.
+fn evaluate_simple_cond(cond: &str, macros: &HashMap<String, MacroDef>) -> bool {
+    let expanded = expand_macros(cond, macros);
+    let trimmed = expanded.trim();
+
+    // Handle defined(NAME) or defined NAME
+    if trimmed.starts_with("defined") {
+        let rest = trimmed["defined".len()..].trim();
+        let name = if rest.starts_with('(') {
+            let end = rest.find(')').unwrap_or(rest.len());
+            rest[1..end].trim()
+        } else {
+            rest.split_whitespace().next().unwrap_or("")
+        };
+        return macros.contains_key(name);
+    }
+
+    // Handle simple comparisons: ==, !=, >, <, >=, <=
+    for (op, f) in &[
+        ("==", (|a: i64, b: i64| a == b) as fn(i64, i64) -> bool),
+        ("!=", (|a, b| a != b) as fn(i64, i64) -> bool),
+        (">=", (|a, b| a >= b) as fn(i64, i64) -> bool),
+        ("<=", (|a, b| a <= b) as fn(i64, i64) -> bool),
+        (">", (|a, b| a > b) as fn(i64, i64) -> bool),
+        ("<", (|a, b| a < b) as fn(i64, i64) -> bool),
+    ] {
+        if let Some(pos) = trimmed.find(op) {
+            let lhs = trimmed[..pos].trim();
+            let rhs = trimmed[pos + op.len()..].trim();
+            let lv = parse_cond_value(lhs, macros);
+            let rv = parse_cond_value(rhs, macros);
+            return f(lv, rv);
+        }
+    }
+
+    // Simple integer value: non-zero is true
+    let val = parse_cond_value(trimmed, macros);
+    val != 0
+}
+
+/// Parse a value in a preprocessor condition expression.
+fn parse_cond_value(s: &str, macros: &HashMap<String, MacroDef>) -> i64 {
+    let trimmed = s.trim();
+    if trimmed.starts_with("defined") {
+        let rest = trimmed["defined".len()..].trim();
+        let name = if rest.starts_with('(') {
+            let end = rest.find(')').unwrap_or(rest.len());
+            rest[1..end].trim()
+        } else {
+            rest.split_whitespace().next().unwrap_or("")
+        };
+        return if macros.contains_key(name) { 1 } else { 0 };
+    }
+    trimmed.parse::<i64>().unwrap_or(0)
 }
 
 /// Substitute parameter names in a macro body with argument values.

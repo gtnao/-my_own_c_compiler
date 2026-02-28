@@ -479,6 +479,48 @@ int main() { return X + Y; }'
 assert 5 '#define VAL 5
 int main() { int a = VAL; return a; }'
 
+# Step 10.5: conditional compilation (#ifdef, #ifndef, #if, #else, #elif, #endif)
+assert 1 '#define FOO
+#ifdef FOO
+int main() { return 1; }
+#else
+int main() { return 2; }
+#endif'
+assert 2 '#ifdef FOO
+int main() { return 1; }
+#else
+int main() { return 2; }
+#endif'
+assert 10 '#define X 10
+#ifndef X
+int main() { return 0; }
+#else
+int main() { return X; }
+#endif'
+assert 5 '#ifndef UNDEF
+int main() { return 5; }
+#else
+int main() { return 0; }
+#endif'
+assert 1 '#if 1
+int main() { return 1; }
+#else
+int main() { return 0; }
+#endif'
+assert 0 '#if 0
+int main() { return 1; }
+#else
+int main() { return 0; }
+#endif'
+assert 20 '#define X 2
+#if X == 1
+int main() { return 10; }
+#elif X == 2
+int main() { return 20; }
+#else
+int main() { return 30; }
+#endif'
+
 # Step 10.2: #include
 # Create test header file
 echo 'int add(int a, int b) { return a + b; }' > "$TMPDIR/add.h"
