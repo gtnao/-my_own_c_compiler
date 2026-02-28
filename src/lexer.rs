@@ -93,6 +93,7 @@ impl<'a> Lexer<'a> {
                     "__inline__" => TokenKind::Inline,
                     "_Noreturn" => TokenKind::Noreturn,
                     "__noreturn__" => TokenKind::Noreturn,
+                    "register" => TokenKind::Register,
                     "restrict" => TokenKind::Restrict,
                     "__restrict" => TokenKind::Restrict,
                     "__restrict__" => TokenKind::Restrict,
