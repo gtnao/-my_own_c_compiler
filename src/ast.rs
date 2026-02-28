@@ -54,6 +54,7 @@ pub enum Stmt {
         cond: Expr,
         body: Box<Stmt>,
     },
+    Block(Vec<Stmt>),
     For {
         init: Option<Box<Stmt>>,
         cond: Option<Expr>,

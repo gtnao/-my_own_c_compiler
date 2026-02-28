@@ -67,6 +67,11 @@ impl Codegen {
             Stmt::ExprStmt(expr) => {
                 self.gen_expr(expr);
             }
+            Stmt::Block(stmts) => {
+                for s in stmts {
+                    self.gen_stmt(s);
+                }
+            }
             Stmt::If { cond, then_stmt, else_stmt } => {
                 let else_label = self.new_label();
                 let end_label = self.new_label();

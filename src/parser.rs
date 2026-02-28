@@ -135,6 +135,15 @@ impl<'a> Parser<'a> {
                     body: Box::new(body),
                 }
             }
+            TokenKind::LBrace => {
+                self.advance();
+                let mut stmts = Vec::new();
+                while self.current().kind != TokenKind::RBrace {
+                    stmts.push(self.stmt());
+                }
+                self.expect(TokenKind::RBrace);
+                Stmt::Block(stmts)
+            }
             TokenKind::Int => {
                 self.var_decl()
             }

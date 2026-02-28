@@ -92,6 +92,11 @@ assert 45 'int main() { int s = 0; int i; for (i = 0; i < 10; i = i + 1) s = s +
 assert 10 'int main() { int i = 0; for (;i < 10;) i = i + 1; return i; }'
 assert 55 'int main() { int s = 0; int i; for (i = 1; i <= 10; i = i + 1) s = s + i; return s; }'
 
+# Step 2.7: block statement
+assert 3 'int main() { { return 3; } }'
+assert 5 'int main() { { int a = 2; int b = 3; return a + b; } }'
+assert 55 'int main() { int s = 0; int i = 1; while (i <= 10) { s = s + i; i = i + 1; } return s; }'
+
 echo ""
 echo "--- Results ---"
 echo "PASS: $PASS"
