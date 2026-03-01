@@ -356,7 +356,13 @@ impl Codegen {
                 let mut case_labels = Vec::new();
                 for (val, _) in cases {
                     let label = self.new_label();
-                    self.emit(&format!("  cmp ${}, %rax", val));
+                    // x86-64 cmp only supports 32-bit sign-extended immediates
+                    if *val > i32::MAX as i64 || *val < i32::MIN as i64 {
+                        self.emit(&format!("  movabs ${}, %rdi", val));
+                        self.emit("  cmp %rdi, %rax");
+                    } else {
+                        self.emit(&format!("  cmp ${}, %rax", val));
+                    }
                     self.emit(&format!("  je {}", label));
                     case_labels.push(label);
                 }
