@@ -25,6 +25,7 @@ pub struct Parser<'a> {
     /// Tags that were forward-declared and later fully defined (need resolution)
     resolved_forward_tags: std::collections::HashSet<String>,
     extern_names: std::collections::HashSet<String>,
+    static_names: std::collections::HashSet<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -60,6 +61,7 @@ impl<'a> Parser<'a> {
             forward_declared_tags: std::collections::HashSet::new(),
             resolved_forward_tags: std::collections::HashSet::new(),
             extern_names: std::collections::HashSet::new(),
+            static_names: std::collections::HashSet::new(),
         }
     }
 
@@ -76,10 +78,13 @@ impl<'a> Parser<'a> {
             if self.current().kind == TokenKind::Extension {
                 self.advance();
             }
-            // Skip top-level 'static' qualifier (treat static functions/vars as normal)
-            if self.current().kind == TokenKind::Static {
+            // Track top-level 'static' qualifier for file-local linkage
+            let is_static = if self.current().kind == TokenKind::Static {
                 self.advance();
-            }
+                true
+            } else {
+                false
+            };
             // Handle extern declaration (just skip it — no storage allocated)
             if self.current().kind == TokenKind::Extern {
                 let extern_start = self.pos;
@@ -314,10 +319,20 @@ impl<'a> Parser<'a> {
             }
             if self.is_function() {
                 if let Some(func) = self.function_or_prototype() {
+                    if is_static {
+                        self.static_names.insert(func.name.clone());
+                    }
                     functions.push(func);
                 }
             } else {
+                let globals_before = self.globals.len();
                 self.global_var();
+                // Mark newly added globals as static if 'static' was present
+                if is_static {
+                    for i in globals_before..self.globals.len() {
+                        self.static_names.insert(self.globals[i].1.clone());
+                    }
+                }
             }
         }
         // Resolve any remaining forward-declared struct references
@@ -327,6 +342,7 @@ impl<'a> Parser<'a> {
             globals: self.globals.clone(),
             functions,
             extern_names: self.extern_names.clone(),
+            static_names: self.static_names.clone(),
             struct_defs: self.struct_tags.clone(),
         }
     }

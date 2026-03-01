@@ -22,6 +22,7 @@ pub struct Codegen {
     struct_defs: HashMap<String, Type>,
     pic_mode: bool,
     extern_names: HashSet<String>,
+    static_names: HashSet<String>,
 }
 
 impl Codegen {
@@ -46,11 +47,25 @@ impl Codegen {
             struct_defs: HashMap::new(),
             pic_mode: false,
             extern_names: HashSet::new(),
+            static_names: HashSet::new(),
         }
     }
 
     pub fn set_pic_mode(&mut self, pic: bool) {
         self.pic_mode = pic;
+    }
+
+    /// Returns true if the symbol needs GOT-relative access in PIC mode.
+    /// Non-local (non-static) global symbols require GOT access in shared libraries.
+    fn needs_got_access(&self, name: &str) -> bool {
+        if !self.pic_mode {
+            return false;
+        }
+        // File-local symbols can use direct RIP-relative addressing
+        if name.starts_with("__static.") || self.static_names.contains(name) {
+            return false;
+        }
+        true
     }
 
     fn new_label(&mut self) -> String {
@@ -67,6 +82,8 @@ impl Codegen {
         self.struct_defs = program.struct_defs.clone();
         // Store extern names for PIC mode
         self.extern_names = program.extern_names.clone();
+        // Store static names for .local visibility
+        self.static_names = program.static_names.clone();
 
         // Register global variable names and types
         for (ty, name, _) in &program.globals {
@@ -89,7 +106,7 @@ impl Codegen {
                 self.emit("  .data");
                 let align = ty.align();
                 self.emit(&format!("  .align {}", align));
-                if name.starts_with("__static.") {
+                if name.starts_with("__static.") || self.static_names.contains(name) {
                     self.emit(&format!("  .local {}", name));
                 } else {
                     self.emit(&format!("  .globl {}", name));
@@ -102,8 +119,8 @@ impl Codegen {
                 // Uninitialized global: .bss
                 let size = ty.size();
                 let align = ty.align();
-                if name.starts_with("__static.") {
-                    // Static local: use .local + .comm (file-scope linkage)
+                if name.starts_with("__static.") || self.static_names.contains(name) {
+                    // Static variable: use .local + .comm (file-scope linkage)
                     self.emit(&format!("  .local {}", name));
                     self.emit(&format!("  .comm {}, {}, {}", name, size, align));
                 } else {
@@ -202,7 +219,11 @@ impl Codegen {
             self.stack_size = (self.stack_size + 15) & !15;
         }
 
-        self.emit(&format!("  .globl {}", func.name));
+        if self.static_names.contains(&func.name) {
+            self.emit(&format!("  .local {}", func.name));
+        } else {
+            self.emit(&format!("  .globl {}", func.name));
+        }
         self.emit(&format!("{}:", func.name));
         self.emit("  push %rbp");
         self.emit("  mov %rsp, %rbp");
@@ -1016,8 +1037,8 @@ impl Codegen {
         match expr {
             Expr::Var(name) => {
                 if self.globals.contains(name) {
-                    if self.pic_mode && self.extern_names.contains(name) {
-                        // PIC: extern global accessed through GOT
+                    if self.needs_got_access(name) {
+                        // PIC: non-local global accessed through GOT
                         self.emit(&format!("  mov {}@GOTPCREL(%rip), %rax", name));
                     } else {
                         self.emit(&format!("  lea {}(%rip), %rax", name));
@@ -1264,8 +1285,8 @@ impl Codegen {
         }
         let ty = self.get_var_type(name);
         if self.globals.contains(name) {
-            // PIC mode extern: load via GOT
-            if self.pic_mode && self.extern_names.contains(name) {
+            // PIC mode: non-local globals need GOT-relative access
+            if self.needs_got_access(name) {
                 self.emit(&format!("  mov {}@GOTPCREL(%rip), %rax", name));
                 self.emit_load_indirect(&ty);
                 return;
@@ -1309,8 +1330,8 @@ impl Codegen {
 
     fn emit_store_var(&mut self, name: &str) {
         let ty = self.get_var_type(name);
-        // PIC mode extern: store via GOT
-        if self.pic_mode && self.globals.contains(name) && self.extern_names.contains(name) {
+        // PIC mode: non-local globals need GOT-relative store
+        if self.globals.contains(name) && self.needs_got_access(name) {
             self.push(); // save value
             self.emit(&format!("  mov {}@GOTPCREL(%rip), %rdi", name));
             self.pop("%rax"); // restore value
