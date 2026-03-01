@@ -1,19 +1,19 @@
-# Step 14.1: Long Long and Compound Type Specifiers
+# Step 14.1: long longと複合型指定子
 
-## Overview
+## 概要
 
-Add support for compound type specifiers commonly used in C code:
-- `long long` / `long long int` — 8-byte signed integer (same as `long` on x86-64)
-- `unsigned long long` — 8-byte unsigned integer
-- `long int` — explicit form of `long`
-- `short int` — explicit form of `short`
-- `unsigned short int` — explicit form of `unsigned short`
+Cコードで一般的に使用される複合型指定子のサポートを追加します:
+- `long long` / `long long int` — 8バイト符号付き整数（x86-64では`long`と同じ）
+- `unsigned long long` — 8バイト符号なし整数
+- `long int` — `long`の明示的な形式
+- `short int` — `short`の明示的な形式
+- `unsigned short int` — `unsigned short`の明示的な形式
 
-These compound specifiers are extremely common in real-world C code, especially in system headers and libraries like PostgreSQL.
+これらの複合指定子は実際のCコード、特にシステムヘッダやPostgreSQLなどのライブラリで非常に頻繁に使用されます。
 
-## Why This Matters
+## なぜ必要か
 
-In C, type specifiers can be combined in various ways:
+Cでは型指定子をさまざまな方法で組み合わせることができます:
 
 ```c
 long long x;          // 8-byte signed integer
@@ -24,13 +24,13 @@ short int x;          // equivalent to short
 unsigned short int x; // equivalent to unsigned short
 ```
 
-The C standard (C11 §6.7.2) defines these as valid type specifier combinations. Many codebases, especially PostgreSQL, use `long long` extensively for 64-bit integer types.
+C標準（C11 §6.7.2）はこれらを有効な型指定子の組み合わせとして定義しています。多くのコードベース、特にPostgreSQLは64ビット整数型として`long long`を広く使用しています。
 
-## Implementation
+## 実装
 
-### Parser Changes (`parse_type()`)
+### パーサーの変更（`parse_type()`）
 
-The `Long` token handler was extended to check for a following `Long` or `Int` token:
+`Long`トークンのハンドラを拡張し、後続の`Long`または`Int`トークンをチェックするようにしました:
 
 ```rust
 TokenKind::Long => {
@@ -49,7 +49,7 @@ TokenKind::Long => {
 }
 ```
 
-Similarly, the `Short` token handler now skips an optional `Int`:
+同様に、`Short`トークンのハンドラもオプションの`Int`をスキップするようにしました:
 
 ```rust
 TokenKind::Short => {
@@ -62,34 +62,34 @@ TokenKind::Short => {
 }
 ```
 
-### Type Mapping on x86-64
+### x86-64での型マッピング
 
-On x86-64 Linux (LP64 model):
+x86-64 Linux（LP64モデル）では:
 
-| C Type | Size | Alignment | Internal Type |
+| C型 | サイズ | アラインメント | 内部型 |
 |--------|------|-----------|---------------|
 | `short` / `short int` | 2 | 2 | `Short` |
 | `int` | 4 | 4 | `Int` |
 | `long` / `long int` | 8 | 8 | `Long` |
 | `long long` / `long long int` | 8 | 8 | `Long` |
 
-Note that on x86-64 LP64, `long` and `long long` are both 8 bytes. They are distinct types in the C standard, but for our compiler they map to the same internal `Long` type. This is the same approach GCC and Clang take on this platform.
+x86-64 LP64では`long`と`long long`はどちらも8バイトであることに注意してください。C標準上は異なる型ですが、本コンパイラでは同じ内部型`Long`にマッピングしています。これはGCCやClangがこのプラットフォームで取るアプローチと同じです。
 
-### The `unsigned` Prefix
+### `unsigned`プレフィックス
 
-The `unsigned` keyword is parsed first as a flag (`is_unsigned`), then the base type specifier determines whether to produce `Type::ulong()` or `Type::long_type()`, etc. This works seamlessly with the compound specifiers:
+`unsigned`キーワードはまずフラグ（`is_unsigned`）として解析され、その後ベースの型指定子が`Type::ulong()`か`Type::long_type()`などを生成するかを決定します。これは複合指定子とシームレスに連携します:
 
 ```
 unsigned long long int x;
 ^^^^^^^^ ^^^^ ^^^^ ^^^
    |       |    |    |
-   |       |    |    +-- consumed as trailing "int"
-   |       |    +------- consumed as second "long"
-   |       +------------ consumed as first "long"
-   +-------------------- sets is_unsigned = true
+   |       |    |    +-- trailing "int"として消費
+   |       |    +------- 2番目の"long"として消費
+   |       +------------ 1番目の"long"として消費
+   +-------------------- is_unsigned = trueを設定
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 // long long

@@ -1,12 +1,12 @@
-# Step 14.6: `signed` Keyword
+# Step 14.6: `signed`キーワード
 
-## Overview
+## 概要
 
-Add support for the `signed` type specifier. `signed` is the default signedness for integer types, so `signed int` is equivalent to `int`, `signed char` to `char`, etc. The bare `signed` keyword (without a following type) is treated as `signed int`.
+`signed`型指定子のサポートを追加します。`signed`は整数型のデフォルトの符号付き属性であるため、`signed int`は`int`と等価、`signed char`は`char`と等価、というように対応します。ベアの`signed`キーワード（後続の型なし）は`signed int`として扱われます。
 
-## Why This Matters
+## なぜ必要か
 
-PostgreSQL and system headers occasionally use `signed` explicitly:
+PostgreSQLやシステムヘッダでは、`signed`が明示的に使用されることがあります:
 
 ```c
 signed char sc;
@@ -14,21 +14,21 @@ signed int x;
 signed long val;
 ```
 
-While `signed` is redundant for `int`/`short`/`long` (they are signed by default), `signed char` is distinct from `char` on some platforms where `char` may be unsigned by default.
+`int`/`short`/`long`に対して`signed`は冗長ですが（これらはデフォルトで符号付き）、`signed char`は一部のプラットフォームで`char`がデフォルトで符号なしとなりうるため、`char`とは区別されます。
 
-## Implementation
+## 実装
 
-### Token
+### トークン
 
-Added `Signed` variant to `TokenKind`.
+`TokenKind`に`Signed`バリアントを追加しました。
 
-### Lexer
+### レキサー
 
-Recognizes `signed` as a keyword, mapping to `TokenKind::Signed`.
+`signed`をキーワードとして認識し、`TokenKind::Signed`にマッピングします。
 
-### Parser
+### パーサー
 
-`signed` is handled alongside `unsigned` in `parse_type()`:
+`signed`は`parse_type()`内で`unsigned`と並んで処理されます:
 
 ```rust
 let mut has_signedness = false;
@@ -45,22 +45,22 @@ let is_unsigned = if self.current().kind == TokenKind::Unsigned {
 };
 ```
 
-The `has_signedness` flag is used to handle bare `signed` (without a following type keyword):
-- `signed int` → `int` (normal signed int)
-- `signed char` → `char` (signed char)
-- `signed` alone → `int` (just like bare `unsigned` → `unsigned int`)
+`has_signedness`フラグは、ベアの`signed`（後続の型キーワードなし）を処理するために使用されます:
+- `signed int` → `int`（通常の符号付きint）
+- `signed char` → `char`（符号付きchar）
+- `signed`単独 → `int`（ベアの`unsigned` → `unsigned int`と同様）
 
-Added `TokenKind::Signed` to:
-- `is_type_keyword()` — recognized as part of type declarations
-- `stmt()` match — recognized as starting a variable declaration
+`TokenKind::Signed`を以下に追加しました:
+- `is_type_keyword()` — 型宣言の一部として認識
+- `stmt()`のマッチ — 変数宣言の開始として認識
 
-## Behavior
+## 動作
 
-- `signed` is consumed and does not change the resulting type (since all integer types are signed by default in our compiler)
-- `signed` can precede `int`, `char`, `short`, `long`, or appear alone
-- Bare `signed` defaults to `signed int`
+- `signed`は消費され、結果の型を変更しない（本コンパイラではすべての整数型がデフォルトで符号付きであるため）
+- `signed`は`int`、`char`、`short`、`long`の前に置くか、単独で使用可能
+- ベアの`signed`は`signed int`にデフォルト設定
 
-## Test Cases
+## テストケース
 
 ```c
 int main() { signed int a = 5; return a; }    // → 5

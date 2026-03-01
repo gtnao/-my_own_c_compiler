@@ -1,16 +1,16 @@
-# Step 15.1: Multi-Declarator with Arrays and Pointers
+# ステップ 15.1: 配列とポインタを含む複数宣言子
 
-## Overview
+## 概要
 
-Fix multi-variable declarations (comma-separated) to properly handle array dimensions in addition to pointer stars. Previously, `int a, b[3], *c;` would fail to parse the `b[3]` part.
+複数変数宣言（カンマ区切り）で、ポインタのスターに加えて配列の次元も正しく処理できるよう修正する。従来は `int a, b[3], *c;` の `b[3]` 部分がパースに失敗していた。
 
-## The Bug
+## バグの内容
 
-The multi-declarator parsing code handled pointer modifiers (`*`) for each declarator but didn't parse array dimensions (`[N]`). So in `int a = 1, *b, c[3];`, the `c[3]` would not be recognized as an array, and `c` would be declared as plain `int`.
+複数宣言子のパースコードはポインタ修飾子（`*`）は各宣言子について処理していたが、配列の次元（`[N]`）はパースしていなかった。そのため `int a = 1, *b, c[3];` では `c[3]` が配列として認識されず、`c` は単なる `int` として宣言されていた。
 
-## Fix
+## 修正内容
 
-Added array dimension parsing after the variable name in both multi-declarator paths (with and without initializer):
+両方の複数宣言子パス（初期化子ありとなし）で、変数名の後に配列の次元のパースを追加した:
 
 ```rust
 // After parsing the declarator name, check for array dimensions
@@ -27,17 +27,17 @@ while self.current().kind == TokenKind::LBracket {
 }
 ```
 
-## Also Updated
+## その他の更新
 
-Added Phase 15-20 to PLAN.md covering all remaining features needed for PostgreSQL compilation:
-- Phase 15: Advanced Declarations and Type System
-- Phase 16: Preprocessor Extensions
-- Phase 17: Standard Library Header Stubs
-- Phase 18: GCC Extensions and Builtins
-- Phase 19: Advanced Code Generation
-- Phase 20: PostgreSQL Integration Testing
+PLAN.mdにPhase 15-20を追加し、PostgreSQLコンパイルに必要な残りの全機能を網羅した:
+- Phase 15: 高度な宣言と型システム
+- Phase 16: プリプロセッサ拡張
+- Phase 17: 標準ライブラリヘッダスタブ
+- Phase 18: GCC拡張とビルトイン
+- Phase 19: 高度なコード生成
+- Phase 20: PostgreSQL統合テスト
 
-## Test Cases
+## テストケース
 
 ```c
 int a = 1, b = 2, c = 3; return a+b+c;           // → 6

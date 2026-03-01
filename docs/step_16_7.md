@@ -1,22 +1,22 @@
-# Step 16.7: Backslash Continuation Lines
+# Step 16.7: バックスラッシュによる行継続
 
-## Overview
+## 概要
 
-Add support for backslash-newline continuation lines in the preprocessor. This allows multi-line macro definitions, which are ubiquitous in PostgreSQL headers.
+プリプロセッサにバックスラッシュ+改行による行継続のサポートを追加します。これにより複数行にわたるマクロ定義が可能になります。PostgreSQLのヘッダでは広く使われている機能です。
 
-## The Problem
+## 問題
 
-Multi-line macros like:
+以下のような複数行マクロが結合されていませんでした。
 ```c
 #define ADD(a, b) \
     ((a) + (b))
 ```
 
-Were not being joined. The preprocessor processed line-by-line, so `#define ADD(a, b) \` would define a macro with body `\`, and the next line `((a) + (b))` was treated as a separate C statement.
+プリプロセッサは行単位で処理していたため、`#define ADD(a, b) \` は本体が `\` であるマクロとして定義され、次の行 `((a) + (b))` は独立したC文として扱われていました。
 
-## Fix
+## 修正
 
-Added `join_continuation_lines()` as a pre-processing pass before the main preprocessor loop. When a line ends with `\`, the backslash is stripped and the next line is appended without a newline separator:
+メインのプリプロセッサループの前に、前処理パスとして `join_continuation_lines()` を追加しました。行末が `\` で終わっている場合、バックスラッシュを削除し、次の行を改行なしで結合します。
 
 ```rust
 fn join_continuation_lines(source: &str) -> String {
@@ -34,9 +34,9 @@ fn join_continuation_lines(source: &str) -> String {
 }
 ```
 
-This runs before any directive parsing, so `#define`, `#if`, and all other directives see the already-joined lines.
+この処理はディレクティブの解析よりも前に実行されるため、`#define`、`#if` などすべてのディレクティブは既に結合された行を見ることになります。
 
-## Test Cases
+## テストケース
 
 ```c
 #define ADD(a, b) \

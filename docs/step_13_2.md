@@ -1,12 +1,12 @@
-# Step 13.2: Peephole Optimization — Redundant Push/Pop Elimination
+# Step 13.2: ピープホール最適化 — 冗長なpush/popの除去
 
-## Overview
+## 概要
 
-Add a post-generation peephole optimization pass that eliminates redundant `push`/`pop` instruction pairs in the generated assembly.
+生成されたアセンブリ中の冗長な`push`/`pop`命令ペアを除去する、コード生成後のピープホール最適化パスを追加します。
 
-## Stack-Machine Code Generation
+## スタックマシン方式のコード生成
 
-The compiler uses a stack-machine approach where binary operations work as:
+コンパイラはスタックマシン方式を採用しており、二項演算は以下のように処理されます:
 
 ```asm
 ; Compute a + b
@@ -17,13 +17,13 @@ The compiler uses a stack-machine approach where binary operations work as:
   add %rdi, %rax       ; %rax = lhs + rhs
 ```
 
-This generates many `push`/`pop` pairs. When they are adjacent, they can be optimized.
+この方式では多くの`push`/`pop`ペアが生成されます。これらが隣接している場合、最適化が可能です。
 
-## Optimization Patterns
+## 最適化パターン
 
-### Pattern 1: `push %rax` + `pop %rax` → remove both
+### パターン1: `push %rax` + `pop %rax` → 両方削除
 
-When the same register is pushed and immediately popped, both instructions are dead code:
+同じレジスタがpushされてすぐにpopされる場合、両方の命令はデッドコードです:
 
 ```asm
 ; Before:
@@ -33,9 +33,9 @@ When the same register is pushed and immediately popped, both instructions are d
   (removed)
 ```
 
-### Pattern 2: `push %rax` + `pop %reg` → `mov %rax, %reg`
+### パターン2: `push %rax` + `pop %reg` → `mov %rax, %reg`
 
-A push followed by a pop into a different register is equivalent to a register-to-register move, which is faster (no memory access):
+pushの直後に別のレジスタへのpopが続く場合、レジスタ間のmovと等価であり、メモリアクセスが不要なため高速です:
 
 ```asm
 ; Before:
@@ -45,9 +45,9 @@ A push followed by a pop into a different register is equivalent to a register-t
   mov %rax, %rdi
 ```
 
-## Implementation
+## 実装
 
-The optimization is applied as a post-processing pass on the generated assembly text in `peephole_optimize()`:
+最適化は`peephole_optimize()`において、生成されたアセンブリテキストに対する後処理パスとして適用されます:
 
 ```rust
 fn peephole_optimize(&mut self) {
@@ -75,26 +75,26 @@ fn peephole_optimize(&mut self) {
 }
 ```
 
-## Safety
+## 安全性
 
-The optimization only applies to **adjacent** `push`/`pop` pairs. Non-adjacent pairs (where other instructions intervene) are left as-is, since the stack state between the push and pop may be needed for intermediate computations.
+この最適化は**隣接する**`push`/`pop`ペアにのみ適用されます。間に他の命令が挟まる非隣接ペアはそのまま残されます。pushとpopの間のスタック状態が中間計算に必要な場合があるためです。
 
-This conservative approach is safe because:
-1. It only transforms pairs that are provably equivalent
-2. It doesn't change the stack depth at any point where it matters
-3. The optimization runs after all code generation is complete
+この保守的なアプローチが安全である理由:
+1. 証明可能に等価なペアのみを変換する
+2. スタック深度が重要な箇所で変更を加えない
+3. すべてのコード生成が完了した後に最適化が実行される
 
-## Example
+## 例
 
 ```c
 return 2 + 3 * 4;
 ```
 
-With constant folding, this becomes `mov $14, %rax` — no push/pop to optimize. For non-constant expressions, adjacent push/pop pairs are converted to `mov` instructions.
+定数畳み込みにより`mov $14, %rax`となり、最適化すべきpush/popは存在しません。定数でない式の場合、隣接するpush/popペアは`mov`命令に変換されます。
 
-## Limitations
+## 制限事項
 
-- Only optimizes adjacent `push %rax; pop %reg` pairs
-- Does not optimize `push/pop` with intervening instructions
-- Does not optimize `push %rdi; pop %rdi` or other register pairs
-- No register allocation — still uses the stack-machine model
+- 隣接する`push %rax; pop %reg`ペアのみを最適化する
+- 間に命令が挟まる`push/pop`は最適化しない
+- `push %rdi; pop %rdi`などの他のレジスタペアは最適化しない
+- レジスタ割り当ては行わない — スタックマシンモデルのまま

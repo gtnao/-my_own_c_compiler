@@ -1,14 +1,14 @@
-# Step 20.2: PostgreSQL Extension Compilation
+# Step 20.2: PostgreSQL拡張のコンパイル
 
-## Overview
+## 概要
 
-This step enables compilation of PostgreSQL extension source files by adding support for struct initializers in static local variables.
+このステップでは、静的ローカル変数における構造体イニシャライザのサポートを追加し、PostgreSQL拡張のソースファイルをコンパイルできるようにします。
 
-## Changes
+## 変更内容
 
-### Static Variable Struct Initializers
+### 静的変数の構造体イニシャライザ
 
-PostgreSQL's `PG_MODULE_MAGIC` macro expands to a function with a static const struct initializer:
+PostgreSQLの `PG_MODULE_MAGIC` マクロは、静的constな構造体イニシャライザを持つ関数に展開されます。
 
 ```c
 static const Pg_magic_struct Pg_magic_data = {
@@ -21,31 +21,31 @@ static const Pg_magic_struct Pg_magic_data = {
 };
 ```
 
-Previously, static variable initializers only supported a single numeric literal. Now they support:
+以前の実装では、静的変数のイニシャライザは単一の数値リテラルのみをサポートしていました。現在は以下をサポートします。
 
-1. **Brace-enclosed initializers** `{ val1, val2, ... }`:
-   - Each value is evaluated as a constant expression (supports `sizeof`, arithmetic, etc.)
-   - Values are packed into bytes according to the struct's field layout
-   - Field sizes and offsets are read from the struct type's member definitions
+1. **波括弧で囲まれたイニシャライザ** `{ val1, val2, ... }`:
+   - 各値は定数式として評価される（`sizeof`、算術演算などをサポート）
+   - 値は構造体のフィールドレイアウトに従ってバイト列にパックされる
+   - フィールドのサイズとオフセットは構造体型のメンバ定義から読み取られる
 
-2. **Constant expression initializers**:
-   - Changed from `Num(n)` literal matching to `eval_const_expr()` evaluation
-   - Supports `sizeof`, arithmetic, casts, and other compile-time expressions
+2. **定数式イニシャライザ**:
+   - `Num(n)` リテラルのマッチングから `eval_const_expr()` 評価に変更
+   - `sizeof`、算術演算、キャスト、その他のコンパイル時式をサポート
 
-### How Struct Initialization Works
+### 構造体初期化の仕組み
 
-For a struct type, the initializer:
-1. Allocates a zero-filled byte array of `ty.size()` bytes
-2. For each value in the initializer list:
-   - Evaluates the constant expression
-   - Determines the field size from the struct's member list (matching by offset)
-   - Writes the value bytes at the current offset
-   - Advances to the next field's offset (respecting alignment)
-3. The byte array is emitted in `.data` section as `.byte` directives
+構造体型のイニシャライザは以下の手順で処理されます。
+1. `ty.size()` バイトのゼロ埋めバイト配列を割り当てる
+2. イニシャライザリストの各値について:
+   - 定数式を評価する
+   - 構造体のメンバリストからフィールドサイズを決定する（オフセットでマッチング）
+   - 現在のオフセットに値のバイト列を書き込む
+   - 次のフィールドのオフセットに進む（アライメントを考慮）
+3. バイト配列は `.data` セクションに `.byte` ディレクティブとして出力される
 
-## Verification
+## 検証
 
-PostgreSQL extension source files now compile successfully:
+PostgreSQL拡張のソースファイルが正常にコンパイルされるようになりました。
 
 ```c
 #include "postgres.h"
@@ -61,4 +61,4 @@ Datum add_one(PG_FUNCTION_ARGS) {
 }
 ```
 
-Generates correct assembly with static data section for the magic struct.
+マジック構造体の静的データセクションを含む正しいアセンブリが生成されます。

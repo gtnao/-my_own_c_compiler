@@ -1,10 +1,10 @@
-# Step 13.1: Constant Folding
+# Step 13.1: 定数畳み込み
 
-## Overview
+## 概要
 
-Constant folding is a compile-time optimization that evaluates constant expressions during parsing instead of generating code to compute them at runtime.
+定数畳み込み（Constant Folding）は、定数式を実行時にコードを生成して計算するのではなく、コンパイル時に評価するコンパイル時最適化です。
 
-Before:
+最適化前:
 ```asm
   mov $3, %rax    # load 3
   push %rax
@@ -13,14 +13,14 @@ Before:
   add %rdi, %rax  # compute 2+3 at runtime
 ```
 
-After:
+最適化後:
 ```asm
   mov $5, %rax    # result computed at compile time
 ```
 
-## Implementation
+## 実装
 
-A helper method `make_binop` is used instead of directly constructing `Expr::BinOp` nodes. When both operands are `Expr::Num`, the result is computed at compile time and returned as `Expr::Num`:
+`Expr::BinOp`ノードを直接構築する代わりに、ヘルパーメソッド`make_binop`を使用します。両方のオペランドが`Expr::Num`の場合、結果はコンパイル時に計算され`Expr::Num`として返されます:
 
 ```rust
 fn make_binop(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
@@ -38,35 +38,35 @@ fn make_binop(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
 }
 ```
 
-## Supported Operations
+## 対応する演算
 
-All binary operations are folded:
-- Arithmetic: `+`, `-`, `*`, `/`, `%`
-- Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- Bitwise: `&`, `|`, `^`, `<<`, `>>`
+すべての二項演算が畳み込み対象です:
+- 算術演算: `+`, `-`, `*`, `/`, `%`
+- 比較演算: `==`, `!=`, `<`, `<=`, `>`, `>=`
+- ビット演算: `&`, `|`, `^`, `<<`, `>>`
 
-Division and modulo by zero are not folded (they produce runtime code that would crash, matching GCC behavior for constant division by zero).
+ゼロ除算およびゼロでの剰余演算は畳み込みを行いません（実行時にクラッシュするコードを生成しますが、これはGCCの定数ゼロ除算に対する動作と一致しています）。
 
-## Cascading Folding
+## 連鎖的な畳み込み
 
-Because folding happens during parsing (in the recursive descent), it cascades naturally:
+畳み込みは構文解析中（再帰下降パーサー内）に行われるため、自然に連鎖します:
 
 ```c
 return 1 + 2 + 3;
 ```
 
-1. Parse `1 + 2` → `make_binop(Add, Num(1), Num(2))` → `Num(3)`
-2. Parse `Num(3) + 3` → `make_binop(Add, Num(3), Num(3))` → `Num(6)`
+1. `1 + 2`をパース → `make_binop(Add, Num(1), Num(2))` → `Num(3)`
+2. `Num(3) + 3`をパース → `make_binop(Add, Num(3), Num(3))` → `Num(6)`
 
-Result: `mov $6, %rax`
+結果: `mov $6, %rax`
 
-## Wrapping Arithmetic
+## ラッピング算術
 
-All operations use Rust's `wrapping_*` methods to match C's behavior for signed integer overflow (implementation-defined but typically wrapping on two's complement machines).
+すべての演算でRustの`wrapping_*`メソッドを使用し、符号付き整数オーバーフローに対するCの動作（実装定義だが、2の補数マシンでは通常ラッピング）と一致させています。
 
-## What's NOT Folded
+## 畳み込みの対象外
 
-- Unary operations (e.g., `-1` is already parsed as `Num(-1)` by the lexer for negative literals, or as `UnaryOp(Neg, Num(1))` which is not folded)
-- Expressions involving variables
-- Short-circuit operators (`&&`, `||`)
-- Ternary operator (`? :`)
+- 単項演算（例: `-1`はレキサーによって負のリテラルとして`Num(-1)`にパースされるか、`UnaryOp(Neg, Num(1))`として畳み込みされない）
+- 変数を含む式
+- 短絡評価演算子（`&&`, `||`）
+- 三項演算子（`? :`）

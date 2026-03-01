@@ -1,24 +1,24 @@
-# Step 15.4: K&R Style Function Declarations
+# Step 15.4: K&Rスタイル関数宣言
 
-## Overview
+## 概要
 
-K&R (Kernighan & Ritchie) style function declarations use an older C syntax where parameter types are declared after the parameter list, before the function body:
+K&R（Kernighan & Ritchie）スタイルの関数宣言は、古いC言語の構文で、パラメータの型をパラメータリストの後、関数本体の前に宣言する方式です。
 
 ```c
 int add(a, b) int a; int b; { return a + b; }
 ```
 
-Modern style equivalent:
+モダンスタイルで書くと以下と同等です。
 ```c
 int add(int a, int b) { return a + b; }
 ```
 
-## Implementation
+## 実装
 
-The parser detects K&R style by checking if the first token in the parameter list is an identifier that is NOT a type name:
+パーサーは、パラメータリストの最初のトークンが型名ではない識別子であるかどうかを調べることで、K&Rスタイルを検出します。
 
-1. **K&R parameter list parsing**: When we see `(ident, ident, ...)` where `ident` is not a type, parse parameter names with default `int` type
-2. **Post-paren type declarations**: After `)`, if we see type keywords before `{`, parse `type name;` declarations and update the corresponding parameter types
+1. **K&Rパラメータリストの解析**: `(ident, ident, ...)` のように、`ident` が型名でない場合、パラメータ名をデフォルトの `int` 型として解析します
+2. **閉じ括弧後の型宣言**: `)` の後に `{` の前に型キーワードがある場合、`type name;` 形式の宣言を解析し、対応するパラメータの型を更新します
 
 ```rust
 // Detect K&R: first token is identifier, not a type name
@@ -39,7 +39,7 @@ while self.current().kind != TokenKind::LBrace {
 }
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 int add(a, b) int a; int b; { return a+b; }

@@ -1,28 +1,28 @@
-# Step 15.3: Complex Type Declarators
+# ステップ 15.3: 複雑な型宣言子
 
-## Overview
+## 概要
 
-This step enhances the parser to handle complex C type declarations:
-- **Pointer arrays**: `int *arr[3]` — array of 3 pointers to int
-- **Array pointers**: `int (*p)[3]` — pointer to array of 3 ints
-- **Function pointer arrays**: `int (*ops[2])(int, int)` — array of 2 function pointers
+このステップでは、複雑なCの型宣言を扱えるようパーサーを拡張する:
+- **ポインタ配列**: `int *arr[3]` — intへのポインタの3要素配列
+- **配列ポインタ**: `int (*p)[3]` — 3要素int配列へのポインタ
+- **関数ポインタ配列**: `int (*ops[2])(int, int)` — 2個の関数ポインタの配列
 
-## C Declaration Syntax
+## Cの宣言構文
 
-C's declaration syntax follows the "declaration mirrors use" principle. The declarator has two forms when parentheses are involved:
+Cの宣言構文は「宣言は使用を反映する」という原則に従う。括弧が含まれる場合、宣言子には2つの形式がある:
 
-### `int *arr[3]` — Pointer Array (already worked)
-`*` binds to the base type, `[3]` is part of the declarator. `parse_type()` reads `int *` as `Ptr(Int)`, then `var_decl()` parses `arr[3]` creating `Array(Ptr(Int), 3)`.
+### `int *arr[3]` — ポインタ配列（既に動作済み）
+`*` はベース型に結合し、`[3]` は宣言子の一部である。`parse_type()` が `int *` を `Ptr(Int)` として読み取り、その後 `var_decl()` が `arr[3]` をパースして `Array(Ptr(Int), 3)` を作成する。
 
-### `int (*p)[3]` — Array Pointer
-The parentheses group `*p` together, so `p` is a pointer to `int[3]`. `parse_func_ptr_or_array_ptr_decl()` handles this: after `(*name)`, it sees `[3]` and creates `Ptr(Array(Int, 3))`.
+### `int (*p)[3]` — 配列ポインタ
+括弧が `*p` をグループ化するため、`p` は `int[3]` へのポインタになる。`parse_func_ptr_or_array_ptr_decl()` がこれを処理する: `(*name)` の後に `[3]` を検出し、`Ptr(Array(Int, 3))` を作成する。
 
-### `int (*ops[2])(int, int)` — Function Pointer Array
-The key insight: `ops[2]` is inside the parens with `*`, meaning each element of `ops` is a pointer. The `(int, int)` suffix makes it a function pointer. Result: `Array(Ptr(Void), 2)` — array of 2 function pointers.
+### `int (*ops[2])(int, int)` — 関数ポインタ配列
+重要なポイント: `ops[2]` は `*` と共に括弧の内側にあり、`ops` の各要素がポインタであることを意味する。`(int, int)` の接尾辞によって関数ポインタとなる。結果: `Array(Ptr(Void), 2)` — 2個の関数ポインタの配列。
 
-## Implementation
+## 実装
 
-The `parse_func_ptr_or_array_ptr_decl()` method was extended to handle array dimensions inside the parentheses:
+`parse_func_ptr_or_array_ptr_decl()` メソッドを拡張し、括弧内の配列次元を処理できるようにした:
 
 ```rust
 fn parse_func_ptr_or_array_ptr_decl(&mut self, base_ty: Type) -> Stmt {
@@ -47,9 +47,9 @@ fn parse_func_ptr_or_array_ptr_decl(&mut self, base_ty: Type) -> Stmt {
 }
 ```
 
-When `array_size` is `Some(N)` and `(params)` follows, we create `Array(Ptr(Void), N)` — a function pointer array. Each 8-byte element is a generic function pointer.
+`array_size` が `Some(N)` で `(params)` が続く場合、`Array(Ptr(Void), N)` を作成する — 関数ポインタ配列である。各8バイトの要素は汎用的な関数ポインタとなる。
 
-## Test Cases
+## テストケース
 
 ```c
 // Pointer array

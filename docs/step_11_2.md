@@ -1,34 +1,34 @@
-# Step 11.2: Variadic Arguments (`...`, `va_list`, `va_start`, `va_arg`)
+# ステップ 11.2: 可変長引数（`...`, `va_list`, `va_start`, `va_arg`）
 
-## Overview
+## 概要
 
-This step implements variadic function support, allowing functions to accept a variable number of arguments. This is essential for functions like `printf` and custom variadic functions.
+このステップでは、可変長引数をサポートする関数を実装する。これにより、関数が可変個の引数を受け取れるようになる。`printf` のような関数やカスタムの可変長引数関数に不可欠な機能である。
 
-The key components are:
-- `...` (ellipsis) in function parameter lists to declare variadic functions
-- `va_list` type for iterating over variadic arguments
-- `va_start(ap, last_param)` to initialize a `va_list`
-- `va_arg(ap, type)` to retrieve the next argument
-- `va_end(ap)` to clean up (no-op in our implementation)
+主な構成要素は以下の通り:
+- `...`（省略記号）: 関数パラメータリストで可変長引数関数を宣言する
+- `va_list` 型: 可変長引数を走査するための型
+- `va_start(ap, last_param)`: `va_list` を初期化する
+- `va_arg(ap, type)`: 次の引数を取得する
+- `va_end(ap)`: 後始末（本実装では何もしない）
 
-## System V AMD64 ABI and Register Save Area
+## System V AMD64 ABI とレジスタ保存領域
 
-On x86-64 Linux (System V AMD64 ABI), the first 6 integer/pointer arguments are passed in registers:
+x86-64 Linux（System V AMD64 ABI）では、最初の6つの整数/ポインタ引数はレジスタで渡される:
 
-| Register | Argument index |
-|----------|---------------|
-| `%rdi`   | 0             |
-| `%rsi`   | 1             |
-| `%rdx`   | 2             |
-| `%rcx`   | 3             |
-| `%r8`    | 4             |
-| `%r9`    | 5             |
+| レジスタ | 引数インデックス |
+|----------|-----------------|
+| `%rdi`   | 0               |
+| `%rsi`   | 1               |
+| `%rdx`   | 2               |
+| `%rcx`   | 3               |
+| `%r8`    | 4               |
+| `%r9`    | 5               |
 
-For variadic functions, we need to save all register arguments to a contiguous memory area (the **register save area**) so that `va_arg` can iterate through them sequentially.
+可変長引数関数では、`va_arg` が順番に引数を走査できるように、すべてのレジスタ引数を連続したメモリ領域（**レジスタ保存領域**）に保存する必要がある。
 
-### Register Save Area Layout
+### レジスタ保存領域のレイアウト
 
-We allocate 48 bytes (6 registers × 8 bytes each) on the stack:
+スタック上に48バイト（6レジスタ × 各8バイト）を確保する:
 
 ```
 Higher addresses (toward %rbp)
@@ -48,11 +48,11 @@ Higher addresses (toward %rbp)
 Lower addresses (toward %rsp)
 ```
 
-Where `base` is `va_save_area_offset` — the distance from `%rbp` to the start of the save area (the lowest address, where `%rdi` is stored).
+ここで `base` は `va_save_area_offset` であり、`%rbp` から保存領域の先頭（最も低いアドレス、`%rdi` が格納される場所）までの距離を表す。
 
-Arguments are stored in ascending address order: `%rdi` at the lowest address, `%r9` at the highest. This means advancing through arguments requires **adding** 8 to the pointer.
+引数はアドレスの昇順で格納される: `%rdi` が最も低いアドレスに、`%r9` が最も高いアドレスに配置される。つまり、引数を順番に読み進めるには、ポインタに **8を加算** する必要がある。
 
-### Function Prologue for Variadic Functions
+### 可変長引数関数の関数プロローグ
 
 ```asm
   push %rbp
@@ -68,15 +68,15 @@ Arguments are stored in ascending address order: `%rdi` at the lowest address, `
   mov %r9,  -32(%rbp)    # arg 5
 ```
 
-## `va_list` Implementation
+## `va_list` の実装
 
-`va_list` is implemented as `char *` — a simple pointer into the register save area. This is a simplified version of the full ABI's `va_list` structure (which includes `gp_offset`, `fp_offset`, `overflow_arg_area`, and `reg_save_area`), but it works for up to 6 integer arguments.
+`va_list` は `char *`（レジスタ保存領域へのシンプルなポインタ）として実装している。これは完全な ABI の `va_list` 構造体（`gp_offset`、`fp_offset`、`overflow_arg_area`、`reg_save_area` を含む）の簡略版だが、整数引数が6個までであれば動作する。
 
-## `va_start` Implementation
+## `va_start` の実装
 
-`va_start(ap, last_param)` initializes `ap` to point to the first **unnamed** argument in the register save area.
+`va_start(ap, last_param)` は、レジスタ保存領域内の最初の **無名引数** を指すように `ap` を初期化する。
 
-If the function has `n` named parameters, the first unnamed argument is at register index `n`, which is at offset `va_save_area_offset - n * 8` from `%rbp`.
+関数が `n` 個の名前付きパラメータを持つ場合、最初の無名引数はレジスタインデックス `n` にあり、`%rbp` からのオフセットは `va_save_area_offset - n * 8` となる。
 
 ```asm
   # va_start(ap, last_param) where function has 1 named param
@@ -89,9 +89,9 @@ If the function has `n` named parameters, the first unnamed argument is at regis
   mov %rax, (%rdi)              # ap = &save_area[param_count]
 ```
 
-## `va_arg` Implementation
+## `va_arg` の実装
 
-`va_arg(ap, type)` reads the value at the current `ap` position, then advances `ap` by 8 bytes.
+`va_arg(ap, type)` は、現在の `ap` 位置の値を読み取り、`ap` を8バイト進める。
 
 ```asm
   # va_arg(ap, int)
@@ -105,24 +105,24 @@ If the function has `n` named parameters, the first unnamed argument is at regis
   pop %rax                      # restore loaded value to %rax
 ```
 
-The advancement direction is `add $8` because arguments are stored in ascending address order (arg 0 at lowest address, arg 5 at highest).
+引数はアドレスの昇順に格納されている（arg 0 が最低アドレス、arg 5 が最高アドレス）ため、進行方向は `add $8` となる。
 
-For different types:
-- `int`: `movslq (%rdi), %rax` (sign-extend 32-bit to 64-bit)
-- `long`/pointers: `mov (%rdi), %rax` (full 64-bit load)
-- `char`: `movsbl (%rdi), %eax` (sign-extend 8-bit)
+型ごとの処理:
+- `int`: `movslq (%rdi), %rax`（32ビットを64ビットに符号拡張）
+- `long`/ポインタ: `mov (%rdi), %rax`（64ビット全体をロード）
+- `char`: `movsbl (%rdi), %eax`（8ビットを符号拡張）
 
-## `va_end` Implementation
+## `va_end` の実装
 
-`va_end(ap)` is a no-op — the register save area is part of the stack frame and is automatically cleaned up when the function returns.
+`va_end(ap)` は何も行わない。レジスタ保存領域はスタックフレームの一部であり、関数リターン時に自動的にクリーンアップされる。
 
-In the parser, `va_end(expr)` simply evaluates the expression (for side effects) and discards the result by generating a `Num(0)` node.
+パーサーでは、`va_end(expr)` は式を評価（副作用のため）して結果を破棄し、`Num(0)` ノードを生成する。
 
-## Parser Changes
+## パーサーの変更
 
-### Ellipsis Token
+### 省略記号トークン
 
-A new `Ellipsis` token kind is added for `...`:
+`...` 用に新しい `Ellipsis` トークン種別を追加:
 
 ```rust
 // In lexer: recognize three consecutive dots
@@ -133,9 +133,9 @@ if ch == '.' && self.peek_next() == Some('.') && self.peek_at(2) == Some('.') {
 }
 ```
 
-### Function Declaration
+### 関数宣言
 
-The parser checks for `...` after the last named parameter:
+パーサーは最後の名前付きパラメータの後に `...` があるかチェックする:
 
 ```rust
 // After parsing named parameters
@@ -145,9 +145,9 @@ if self.current().kind == TokenKind::Ellipsis {
 }
 ```
 
-### `va_list` as a Type
+### `va_list` の型としての扱い
 
-`va_list` is recognized as a type keyword and maps to `char *` (pointer to char):
+`va_list` は型キーワードとして認識され、`char *`（char へのポインタ）にマッピングされる:
 
 ```rust
 if name == "va_list" {
@@ -155,17 +155,17 @@ if name == "va_list" {
 }
 ```
 
-### Built-in Function Handling
+### 組み込み関数の処理
 
-`va_start`, `va_arg`, and `va_end` are parsed as special built-in expressions in `primary()`:
+`va_start`、`va_arg`、`va_end` は `primary()` で特殊な組み込み式としてパースされる:
 
 - `va_start(ap, last_param)` → `Expr::VaStart { ap, last_param }`
 - `va_arg(ap, type)` → `Expr::VaArg { ap, ty }`
-- `va_end(ap)` → `Expr::Num(0)` (no-op)
+- `va_end(ap)` → `Expr::Num(0)`（何もしない）
 
-## AST Changes
+## AST の変更
 
-Two new expression nodes:
+2つの新しい式ノードを追加:
 
 ```rust
 pub enum Expr {
@@ -181,7 +181,7 @@ pub enum Expr {
 }
 ```
 
-The `Function` struct gains an `is_variadic` field:
+`Function` 構造体に `is_variadic` フィールドを追加:
 
 ```rust
 pub struct Function {
@@ -194,9 +194,9 @@ pub struct Function {
 }
 ```
 
-## Code Generation Changes
+## コード生成の変更
 
-The `Codegen` struct gains two new fields:
+`Codegen` 構造体に2つの新しいフィールドを追加:
 
 ```rust
 struct Codegen {
@@ -206,7 +206,7 @@ struct Codegen {
 }
 ```
 
-### Stack Frame Layout for Variadic Functions
+### 可変長引数関数のスタックフレームレイアウト
 
 ```
                     %rbp
@@ -223,7 +223,7 @@ struct Codegen {
 └─────────────────┘  ↓  %rsp
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 // Basic variadic sum
@@ -242,12 +242,12 @@ int main() { return sum(3, 10, 20, 30); }  // => 60
 int main() { return sum(3, 1, 2, 3); }     // => 6
 ```
 
-## Limitations
+## 制限事項
 
-1. **Maximum 5 variadic arguments**: Since we only save 6 register arguments and one is used for the named parameter `n`, only 5 variadic arguments can be accessed. Arguments beyond 6 total are passed on the stack and are not handled.
+1. **可変長引数は最大5個**: レジスタ引数は6個しか保存せず、そのうち1つは名前付きパラメータ `n` に使用されるため、アクセスできる可変長引数は5個までとなる。合計7個以上の引数はスタック経由で渡されるが、それらは処理されない。
 
-2. **No floating-point support**: The register save area only saves general-purpose registers. Floating-point arguments passed in `%xmm0`–`%xmm7` are not saved.
+2. **浮動小数点非対応**: レジスタ保存領域は汎用レジスタのみを保存する。`%xmm0`〜`%xmm7` で渡される浮動小数点引数は保存されない。
 
-3. **Simplified `va_list`**: The real ABI uses a struct with `gp_offset`, `fp_offset`, `overflow_arg_area`, and `reg_save_area`. Our implementation uses a simple `char *` pointer.
+3. **簡略化された `va_list`**: 実際の ABI では `gp_offset`、`fp_offset`、`overflow_arg_area`、`reg_save_area` を含む構造体を使用する。本実装では単純な `char *` ポインタを使用している。
 
-4. **No stack-passed argument support**: Arguments 7+ that are passed on the stack are not accessible through `va_arg`.
+4. **スタック渡し引数の非対応**: スタック経由で渡される7番目以降の引数は `va_arg` でアクセスできない。

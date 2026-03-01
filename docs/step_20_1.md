@@ -1,55 +1,55 @@
-# Step 20.1: PostgreSQL Build System Integration
+# Step 20.1: PostgreSQLビルドシステムとの統合
 
-## Overview
+## 概要
 
-This step adds the foundational support needed to compile PostgreSQL header files. Multiple compiler subsystems were enhanced to handle the complexity of real-world system headers and PostgreSQL's build infrastructure.
+このステップでは、PostgreSQLヘッダファイルのコンパイルに必要な基盤サポートを追加します。実世界のシステムヘッダとPostgreSQLのビルドインフラの複雑さに対応するため、コンパイラの複数のサブシステムを強化しました。
 
-## Changes
+## 変更内容
 
-### 1. CLI Flag Support: `-I` and `-D`
+### 1. CLIフラグのサポート: `-I` と `-D`
 
-**`-I` (Include Path)**
+**`-I`（インクルードパス）**
 ```bash
 ./my_own_c_compiler -I/usr/include/postgresql/14/server source.c
 ```
 
-Supports two forms:
-- `-I<dir>` (no space): `-I/usr/include`
-- `-I <dir>` (with space): `-I /usr/include`
+2つの形式をサポートします。
+- `-I<dir>`（スペースなし）: `-I/usr/include`
+- `-I <dir>`（スペースあり）: `-I /usr/include`
 
-Include paths are searched after compiler built-in headers but before system headers (`/usr/include`). This matches GCC's behavior.
+インクルードパスは、コンパイラ組み込みヘッダの後、システムヘッダ（`/usr/include`）の前に検索されます。これはGCCの動作と一致しています。
 
-**`-D` (Macro Definition)**
+**`-D`（マクロ定義）**
 ```bash
 ./my_own_c_compiler -DVAL=42 -DFLAG source.c
 ```
 
-Supports:
-- `-D<name>=<value>`: defines macro with specific value
-- `-D<name>`: defines macro as `1`
-- `-D <name>=<value>`: space-separated form
+サポートする形式:
+- `-D<name>=<value>`: 特定の値でマクロを定義
+- `-D<name>`: マクロを `1` として定義
+- `-D <name>=<value>`: スペース区切り形式
 
-### 2. Preprocessor: Comment Stripping
+### 2. プリプロセッサ: コメント除去
 
-Added `strip_comments()` function that removes C-style comments (`/* ... */` and `// ...`) before directive processing. This is critical because:
+ディレクティブ処理の前にCスタイルのコメント（`/* ... */` と `// ...`）を除去する `strip_comments()` 関数を追加しました。これが重要な理由は以下の通りです。
 
-- System headers like glibc's `features.h` and `sys/cdefs.h` contain complex multi-line comments
-- Without stripping, `#` characters inside comments could be mistaken for preprocessor directives
-- Block comments preserve newlines to maintain correct line numbering
+- glibcの `features.h` や `sys/cdefs.h` などのシステムヘッダには複雑な複数行コメントが含まれている
+- コメント除去なしでは、コメント内の `#` 文字がプリプロセッサディレクティブとして誤認識される可能性がある
+- ブロックコメントは正しい行番号を維持するために改行を保持する
 
-### 3. Preprocessor: Directive Normalization
+### 3. プリプロセッサ: ディレクティブの正規化
 
-C standard allows whitespace between `#` and directive name:
+C標準では `#` とディレクティブ名の間に空白が許可されています。
 ```c
 #  define FOO 1      /* valid C */
 # ifdef BAR          /* valid C */
 ```
 
-The preprocessor now strips `#` and leading whitespace to normalize directives before pattern matching, instead of relying on `trimmed.starts_with("#define")`.
+プリプロセッサは `trimmed.starts_with("#define")` に依存する代わりに、`#` と先頭の空白を削除してからパターンマッチングを行うことでディレクティブを正規化するようになりました。
 
-### 4. Preprocessor: Correct `#if`/`#elif`/`#else`/`#endif` Chain Tracking
+### 4. プリプロセッサ: 正しい `#if`/`#elif`/`#else`/`#endif` チェーン追跡
 
-**Bug fixed**: The conditional compilation stack previously only tracked `(active: bool)`. This caused incorrect behavior with `#ifdef ... #elif ... #else` chains:
+**修正されたバグ**: 条件付きコンパイルのスタックは以前 `(active: bool)` のみを追跡していました。これにより `#ifdef ... #elif ... #else` チェーンで不正な動作が発生していました。
 
 ```c
 #ifdef HAVE_LONG_INT_64      // true
@@ -61,54 +61,54 @@ typedef long long int int64;
 #endif
 ```
 
-The fix changes the stack to `Vec<(bool, bool)>` — `(active, any_branch_taken)`:
-- `any_branch_taken` tracks whether ANY branch in the current `#if`/`#elif`/`#else` chain was already taken
-- `#elif`: if `any_branch_taken`, unconditionally set active=false
-- `#else`: if `any_branch_taken`, set active=false; otherwise set active=true
+修正ではスタックを `Vec<(bool, bool)>` -- `(active, any_branch_taken)` に変更しました。
+- `any_branch_taken` は現在の `#if`/`#elif`/`#else` チェーンでいずれかのブランチが既に採用されたかどうかを追跡
+- `#elif`: `any_branch_taken` が真の場合、無条件で active=false に設定
+- `#else`: `any_branch_taken` が真の場合は active=false に、そうでなければ active=true に設定
 
-### 5. Lexer: Integer Overflow Safety
+### 5. レキサー: 整数オーバーフローの安全性
 
-Large hex literals like `0xFFFFFFFFFFFFFFFF` caused arithmetic overflow panics in the lexer. Fixed by:
-- Using `u64` with `wrapping_mul`/`wrapping_add` for hex, binary, and octal parsing
-- Casting to `i64` after computation
-- Separating numeric suffix stripping from the parsed string
+`0xFFFFFFFFFFFFFFFF` のような大きな16進数リテラルが、レキサーで算術オーバーフローパニックを引き起こしていました。以下のように修正しました。
+- 16進数、2進数、8進数の解析に `u64` と `wrapping_mul`/`wrapping_add` を使用
+- 計算後に `i64` にキャスト
+- 数値サフィックスの除去を解析対象の文字列から分離
 
-### 6. Parser: `__int128` Type Support
+### 6. パーサー: `__int128` 型のサポート
 
-PostgreSQL uses GCC's 128-bit integer type:
+PostgreSQLはGCCの128ビット整数型を使用しています。
 ```c
 typedef __int128 int128;
 typedef unsigned __int128 uint128;
 ```
 
-Added `__int128`, `__int128_t`, and `__uint128_t` as recognized type identifiers, mapped to `long` (64-bit) internally. Full 128-bit arithmetic is not implemented, but type declarations compile correctly.
+`__int128`、`__int128_t`、`__uint128_t` を認識される型識別子として追加し、内部的には `long`（64ビット）にマッピングしています。完全な128ビット算術演算は実装されていませんが、型宣言は正しくコンパイルされます。
 
-### 7. Parser: `__attribute__` After Declarations
+### 7. パーサー: 宣言後の `__attribute__`
 
-Added `skip_attribute()` calls in:
-- `extern` declarations: `extern void func(...) __attribute__((noreturn));`
-- `typedef` declarations: `typedef __int128 int128 __attribute__((aligned(8)));`
+以下の箇所に `skip_attribute()` 呼び出しを追加しました。
+- `extern` 宣言: `extern void func(...) __attribute__((noreturn));`
+- `typedef` 宣言: `typedef __int128 int128 __attribute__((aligned(8)));`
 
-### 8. Parser: Constant Expressions in Array Dimensions
+### 8. パーサー: 配列次元における定数式
 
-Array dimensions previously only accepted numeric literals. Now they accept full constant expressions:
+配列の次元は以前、数値リテラルのみを受け付けていました。現在は完全な定数式を受け付けます。
 ```c
 char padding[128 - sizeof(unsigned short) - sizeof(unsigned long)];
 ```
 
-Changed all array size parsing locations to use `eval_const_expr()` instead of expecting `TokenKind::Num`.
+すべての配列サイズ解析箇所で、`TokenKind::Num` を期待する代わりに `eval_const_expr()` を使用するように変更しました。
 
-### 9. System Include Path
+### 9. システムインクルードパス
 
-Added `/usr/include/x86_64-linux-gnu` to system header search paths for architecture-specific headers on Debian/Ubuntu.
+Debian/Ubuntuにおけるアーキテクチャ固有のヘッダ用に、`/usr/include/x86_64-linux-gnu` をシステムヘッダ検索パスに追加しました。
 
-## Test Results
+## テスト結果
 
-- All 578 existing tests pass
-- 5 new tests for `-I` and `-D` flags
-- PostgreSQL's `postgres.h` header (which pulls in `c.h`, `pg_config.h`, system headers, etc.) compiles successfully
+- 既存の578テストすべてがパス
+- `-I` と `-D` フラグ用の5つの新規テスト
+- PostgreSQLの `postgres.h` ヘッダ（`c.h`、`pg_config.h`、システムヘッダなどを取り込む）が正常にコンパイル
 
-## Verification
+## 検証
 
 ```bash
 # Compile a file that includes postgres.h

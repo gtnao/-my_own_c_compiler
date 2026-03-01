@@ -1,25 +1,25 @@
-# Step 16.2: Full #if Expression Evaluator with defined()
+# Step 16.2: defined() 対応の完全な #if 式評価器
 
-## Overview
+## 概要
 
-Replace the simple `evaluate_simple_cond` function with a full recursive descent expression evaluator for preprocessor `#if` / `#elif` directives. This supports `defined()`, `&&`, `||`, `!`, comparison operators, arithmetic, bitwise operations, ternary operator, and parenthesized expressions.
+プリプロセッサの `#if` / `#elif` ディレクティブ用に、単純な `evaluate_simple_cond` 関数を完全な再帰下降式の式評価器に置き換えます。`defined()`、`&&`、`||`、`!`、比較演算子、算術演算、ビット演算、三項演算子、括弧式をサポートします。
 
-## The Problem
+## 問題
 
-The previous implementation only handled:
-- Simple `defined(NAME)` at the start of the expression
-- Single comparison operators (found via string search)
+以前の実装では、以下のみを処理できていました。
+- 式の先頭にある単純な `defined(NAME)`
+- 文字列検索で見つけた単一の比較演算子
 
-This failed for compound expressions like:
+そのため、以下のような複合式では失敗していました。
 ```c
 #if defined(FOO) && !defined(BAR)
 #if X + 5 == 10
 #if (A > 0) || (B > 0)
 ```
 
-## Solution: Recursive Descent Evaluator
+## 解決策: 再帰下降評価器
 
-Implemented `CondEval` struct with a full expression parser following C operator precedence:
+Cの演算子優先順位に従った完全な式パーサーを持つ `CondEval` 構造体を実装しました。
 
 ```
 expr        = ternary
@@ -38,16 +38,16 @@ unary       = "!" unary | "~" unary | "-" unary | "+" unary | primary
 primary     = number | "(" expr ")" | "defined" ident | char_literal | ident
 ```
 
-### Key Features
+### 主な機能
 
-- **`defined` operator**: Both `defined(NAME)` and `defined NAME` forms
-- **Macro expansion**: Unknown identifiers that are macros get their values expanded recursively
-- **Number parsing**: Decimal, hex (`0x...`), with suffix skipping (`U`, `L`, `UL`, `ULL`)
-- **Character literals**: `'A'` evaluates to 65
-- **Unknown identifiers**: Evaluate to 0 (standard C behavior)
-- **Short-circuit semantics**: `&&` and `||` evaluate both sides (conservative)
+- **`defined` 演算子**: `defined(NAME)` と `defined NAME` の両方の形式に対応
+- **マクロ展開**: マクロである未知の識別子は、その値が再帰的に展開される
+- **数値解析**: 10進数、16進数（`0x...`）に対応し、サフィックス（`U`、`L`、`UL`、`ULL`）はスキップ
+- **文字リテラル**: `'A'` は65に評価される
+- **未知の識別子**: 0に評価される（C標準の動作）
+- **短絡評価**: `&&` と `||` は両辺を評価する（保守的な実装）
 
-## Test Cases
+## テストケース
 
 ```c
 #define FOO 1

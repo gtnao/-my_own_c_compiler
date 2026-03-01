@@ -1,14 +1,14 @@
-# Step 12.2: Struct Value Passing and Returning
+# ステップ 12.2: 構造体の値渡しと値返し
 
-## Overview
+## 概要
 
-Enable structs to be passed by value to functions, returned from functions, and copied via assignment. Previously, structs were only passed as pointers (reference semantics). This step implements true value semantics using `rep movsb` for byte-level memory copy.
+構造体を関数に値渡ししたり、関数から返したり、代入でコピーしたりできるようにする。以前は構造体はポインタ（参照セマンティクス）としてのみ渡されていた。このステップでは、`rep movsb` によるバイト単位のメモリコピーを使って、真の値セマンティクスを実装する。
 
-## Key Changes
+## 主な変更
 
-### 1. Struct Assignment (`s2 = s1`)
+### 1. 構造体の代入（`s2 = s1`）
 
-When the left-hand side of an assignment is a struct type, both sides' addresses are computed, and the struct is byte-copied from source to destination:
+代入の左辺が構造体型の場合、両辺のアドレスを計算し、ソースからデスティネーションへ構造体をバイトコピーする:
 
 ```rust
 // In gen_expr for Expr::Assign
@@ -23,9 +23,9 @@ if let TypeKind::Struct(_) = &lhs_ty.kind {
 }
 ```
 
-### 2. Struct Pass-by-Value (Function Parameters)
+### 2. 構造体の値渡し（関数パラメータ）
 
-When a function receives a struct parameter, the caller passes the struct's address in a register. The callee copies the struct data into its own local stack space, ensuring modifications to the parameter don't affect the caller's original struct:
+関数が構造体パラメータを受け取る場合、呼び出し側は構造体のアドレスをレジスタで渡す。呼ばれた側は構造体データを自身のローカルスタック領域にコピーすることで、パラメータへの変更が呼び出し側の元の構造体に影響しないことを保証する:
 
 ```asm
 ; Callee prologue for struct parameter:
@@ -35,15 +35,15 @@ When a function receives a struct parameter, the caller passes the struct's addr
   rep movsb              ; copy struct into local frame
 ```
 
-This is critical for value semantics. Without the copy, `modify(s)` would alter the caller's struct `s`, violating C semantics.
+これは値セマンティクスにとって重要である。コピーがなければ、`modify(s)` は呼び出し側の構造体 `s` を変更してしまい、C のセマンティクスに違反する。
 
-### 3. Struct Return from Functions
+### 3. 関数からの構造体返し
 
-When a function returns a struct (`return p;`), the struct's address is placed in `%rax`. The caller then copies the returned struct into its local variable using `emit_store_var`, which detects struct types and performs a `rep movsb` copy.
+関数が構造体を返す場合（`return p;`）、構造体のアドレスが `%rax` に格納される。呼び出し側は `emit_store_var` を使って返された構造体をローカル変数にコピーする。`emit_store_var` は構造体型を検出し、`rep movsb` コピーを実行する。
 
-### 4. `emit_store_var` Enhancement for Structs
+### 4. 構造体対応の `emit_store_var` 拡張
 
-Previously, `emit_store_var` had a no-op case for `Struct(_)`. Now it performs a full struct copy when the target variable is a struct:
+以前の `emit_store_var` は `Struct(_)` に対して何もしなかった。今回、ターゲット変数が構造体の場合に完全な構造体コピーを行うようになった:
 
 ```rust
 if let TypeKind::Struct(_) = &ty.kind {
@@ -55,9 +55,9 @@ if let TypeKind::Struct(_) = &ty.kind {
 }
 ```
 
-### 5. `emit_store_indirect` Enhancement for Structs
+### 5. 構造体対応の `emit_store_indirect` 拡張
 
-For indirect struct stores (e.g., through pointers or member access), `emit_store_indirect` now handles struct types by treating `%rax` as the source address and `%rdi` as the destination address:
+間接的な構造体ストア（ポインタやメンバアクセス経由など）のために、`emit_store_indirect` が構造体型を処理するようになった。`%rax` をソースアドレス、`%rdi` をデスティネーションアドレスとして扱う:
 
 ```rust
 if let TypeKind::Struct(_) = &ty.kind {
@@ -68,27 +68,27 @@ if let TypeKind::Struct(_) = &ty.kind {
 }
 ```
 
-### 6. Struct Expression Values
+### 6. 構造体の式の値
 
-When a struct expression appears in a value context (e.g., `Expr::Var`, `Expr::Member`, `Expr::Deref`), the expression evaluates to the struct's **address** rather than loading its contents. This is analogous to array-to-pointer decay:
+構造体式が値コンテキストに出現する場合（例: `Expr::Var`、`Expr::Member`、`Expr::Deref`）、式はその内容をロードするのではなく、構造体の **アドレス** に評価される。これは配列からポインタへの暗黙変換と類似している:
 
-- `Expr::Var(name)` for a struct → `lea -offset(%rbp), %rax`
-- `Expr::Member(base, name)` for a struct member → address computation only
-- `Expr::Deref(ptr)` for a struct pointer → leaves pointer value in `%rax`
+- `Expr::Var(name)` が構造体 → `lea -offset(%rbp), %rax`
+- `Expr::Member(base, name)` が構造体メンバ → アドレス計算のみ
+- `Expr::Deref(ptr)` が構造体ポインタ → ポインタ値を `%rax` に残す
 
-### 7. Standalone Struct Definitions
+### 7. 独立した構造体定義
 
-Added support for top-level struct definitions without a variable name:
+変数名なしのトップレベル構造体定義をサポート:
 
 ```c
 struct P { int x; int y; };  // Just defines the struct tag
 ```
 
-The parser now handles this by checking for `;` immediately after `parse_type()` in `global_var()`.
+パーサーは `global_var()` で `parse_type()` の直後に `;` があるかチェックすることでこれを処理する。
 
-## The `rep movsb` Instruction
+## `rep movsb` 命令
 
-`rep movsb` is an x86 string instruction that copies bytes from `%rsi` (source) to `%rdi` (destination), decrementing `%rcx` until it reaches zero:
+`rep movsb` は x86 のストリング命令で、`%rsi`（ソース）から `%rdi`（デスティネーション）へバイトをコピーし、`%rcx` がゼロになるまでデクリメントする:
 
 ```
 ; Before: %rsi = src, %rdi = dst, %rcx = count
@@ -96,11 +96,11 @@ rep movsb
 ; After: %rcx = 0, %rsi and %rdi advanced by count
 ```
 
-This is the simplest approach for arbitrary-size struct copies. Modern CPUs optimize `rep movsb` internally (ERMS - Enhanced REP MOVSB), making it competitive with hand-written copy loops for most struct sizes.
+これは任意サイズの構造体コピーに対する最もシンプルなアプローチである。最新の CPU は `rep movsb` を内部的に最適化しており（ERMS - Enhanced REP MOVSB）、ほとんどの構造体サイズに対して手書きのコピーループと同等の性能を発揮する。
 
-## Value Semantics Verification
+## 値セマンティクスの検証
 
-The test `modify(a)` confirms that pass-by-value works correctly:
+テスト `modify(a)` は値渡しが正しく動作することを確認する:
 
 ```c
 struct P { int x; int y; };
@@ -112,7 +112,7 @@ int main() {
 }
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 // Struct assignment

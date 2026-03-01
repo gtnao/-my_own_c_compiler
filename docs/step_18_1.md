@@ -1,73 +1,73 @@
-# Phase 18: GCC Extensions and Builtins
+# Phase 18: GCC拡張とビルトイン
 
-## Step 18.1: __attribute__ Semantic Support
-Already implemented — `__attribute__((...))` is parsed and skipped at the syntax level. The parser handles it before types, after types, after function parameter lists, and on struct members.
+## Step 18.1: __attribute__ のセマンティックサポート
+既に実装済みです。`__attribute__((...))` は構文レベルで解析され、スキップされます。パーサーは型の前、型の後、関数パラメータリストの後、構造体メンバ上でこれを処理します。
 
-## Step 18.2: Statement Expressions
-Already implemented — `({ stmt1; stmt2; expr; })` evaluates all statements and the last expression becomes the value. Parsed in `primary()` when `(` is followed by `{`.
+## Step 18.2: 文式（Statement Expressions）
+既に実装済みです。`({ stmt1; stmt2; expr; })` はすべての文を実行し、最後の式が値になります。`primary()` 内で `(` の後に `{` が続く場合に解析されます。
 
-## Step 18.3: Extended __builtin Functions
-Added support for additional GCC builtins:
+## Step 18.3: 拡張 __builtin 関数
+追加のGCCビルトインのサポートを追加しました。
 
-- `__builtin_choose_expr(const_expr, expr1, expr2)` — compile-time conditional
-- `__builtin_trap()` — maps to `abort()` function call
-- `__builtin_classify_type(expr)` — returns 0 (simplified)
-- `__builtin_huge_val()`, `__builtin_inf()`, `__builtin_nan()` — return 0 (simplified)
-- `__builtin_clz/ctz/popcount/bswap/ffs/abs` — passed through as function calls to GCC builtins (linked via libgcc)
+- `__builtin_choose_expr(const_expr, expr1, expr2)` -- コンパイル時の条件選択
+- `__builtin_trap()` -- `abort()` 関数呼び出しにマッピング
+- `__builtin_classify_type(expr)` -- 0を返す（簡略化実装）
+- `__builtin_huge_val()`、`__builtin_inf()`、`__builtin_nan()` -- 0を返す（簡略化実装）
+- `__builtin_clz/ctz/popcount/bswap/ffs/abs` -- GCCビルトインへの関数呼び出しとしてパススルー（libgcc経由でリンク）
 
-Previously implemented:
-- `__builtin_expect(expr, val)` → returns expr
-- `__builtin_constant_p(expr)` → returns 0
-- `__builtin_unreachable()` → no-op
-- `__builtin_offsetof(type, member)` → byte offset
-- `__builtin_types_compatible_p(type1, type2)` → 1 or 0
+以前に実装済みのもの:
+- `__builtin_expect(expr, val)` → exprを返す
+- `__builtin_constant_p(expr)` → 0を返す
+- `__builtin_unreachable()` → 何もしない（no-op）
+- `__builtin_offsetof(type, member)` → バイトオフセット
+- `__builtin_types_compatible_p(type1, type2)` → 1または0
 
-## Step 18.4: Inline Assembly
-`asm()`, `__asm()`, `__asm__()` with optional `volatile` qualifier are parsed and skipped:
+## Step 18.4: インラインアセンブリ
+`asm()`、`__asm()`、`__asm__()` はオプションの `volatile` 修飾子付きで解析され、スキップされます。
 
 ```c
 __asm__ volatile("" : : : "memory");  // memory barrier — skipped
 asm("nop");                            // skipped
 ```
 
-The implementation parses balanced parentheses and discards the content. This is sufficient for PostgreSQL where inline assembly is primarily used for memory barriers and spinlocks (which have C fallbacks).
+実装ではバランスの取れた括弧を解析し、内容を破棄します。PostgreSQLではインラインアセンブリが主にメモリバリアとスピンロック（Cのフォールバックがある）に使用されているため、これで十分です。
 
-## Step 18.5: Computed Goto
-GCC extension for indirect jumps:
+## Step 18.5: 計算されたgoto（Computed Goto）
+間接ジャンプのためのGCC拡張です。
 
 ```c
 void *p = &&target;  // &&label — address of label
 goto *p;             // goto *expr — computed goto
 ```
 
-### Implementation
+### 実装
 
-**AST additions:**
-- `Expr::LabelAddr(String)` — `&&label` expression
-- `Stmt::GotoExpr(Expr)` — `goto *expr` statement
+**ASTの追加:**
+- `Expr::LabelAddr(String)` -- `&&label` 式
+- `Stmt::GotoExpr(Expr)` -- `goto *expr` 文
 
-**Parser:**
-- `&&` in unary position → parse label name, create `LabelAddr`
-- `goto *` → parse expression, create `GotoExpr`
+**パーサー:**
+- 単項演算子の位置で `&&` が出現 → ラベル名を解析し、`LabelAddr` を生成
+- `goto *` → 式を解析し、`GotoExpr` を生成
 
-**Code generation:**
-- `LabelAddr`: `lea .Lnn(%rip), %rax` — load label address
-- `GotoExpr`: evaluate expression, `jmp *%rax` — indirect jump
+**コード生成:**
+- `LabelAddr`: `lea .Lnn(%rip), %rax` -- ラベルアドレスをロード
+- `GotoExpr`: 式を評価し、`jmp *%rax` -- 間接ジャンプ
 
-Labels reuse the same label map as regular `goto`/`label:` for consistent naming.
+ラベルは通常の `goto`/`label:` と同じラベルマップを再利用し、一貫した命名を行います。
 
-## Step 18.6: __extension__ Keyword
-Already implemented — `__extension__` is recognized as a keyword and skipped before types and expressions.
+## Step 18.6: __extension__ キーワード
+既に実装済みです。`__extension__` はキーワードとして認識され、型や式の前でスキップされます。
 
 ## Step 18.7: _Thread_local / __thread
-Added as keywords that are recognized and skipped as storage class specifiers:
+ストレージクラス指定子として認識され、スキップされるキーワードとして追加しました。
 
 ```c
 _Thread_local int counter = 0;  // parsed, thread-local ignored
 __thread int tls_var;            // same
 ```
 
-The thread-local storage qualifier is parsed but treated as a regular variable. Full TLS support (fs-segment register, .tbss/.tdata sections) is not implemented as it requires linker cooperation.
+スレッドローカルストレージ修飾子は解析されますが、通常の変数として扱われます。完全なTLSサポート（fsセグメントレジスタ、.tbss/.tdataセクション）はリンカとの連携が必要なため実装していません。
 
 ## Step 18.8: __builtin_types_compatible_p
-Already implemented — returns 1 if two types have the same kind and signedness, 0 otherwise.
+既に実装済みです。2つの型が同じ種類と符号性を持つ場合は1を、そうでない場合は0を返します。

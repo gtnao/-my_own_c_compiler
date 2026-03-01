@@ -1,39 +1,39 @@
-# Step 11.3: Function Pointers
+# ステップ 11.3: 関数ポインタ
 
-## Overview
+## 概要
 
-This step implements function pointers, enabling functions to be stored in variables and called indirectly. Function pointers are essential for implementing callbacks, dispatch tables, and higher-order programming patterns in C.
+このステップでは関数ポインタを実装し、関数を変数に格納して間接的に呼び出せるようにする。関数ポインタはコールバック、ディスパッチテーブル、高階プログラミングパターンの実装に不可欠である。
 
-Key features:
-- Function pointer declaration: `int (*fp)(int, int)`
-- Function-to-pointer decay: `fp = add` (bare function name becomes a pointer)
-- Indirect function call: `fp(3, 4)` calls via the pointer
+主な機能:
+- 関数ポインタの宣言: `int (*fp)(int, int)`
+- 関数からポインタへの暗黙変換: `fp = add`（裸の関数名がポインタになる）
+- 間接関数呼び出し: `fp(3, 4)` でポインタ経由の呼び出し
 
-## Function Pointer Declaration Syntax
+## 関数ポインタの宣言構文
 
-C's function pointer syntax is notoriously complex:
+C の関数ポインタ構文は複雑なことで有名である:
 
 ```c
 int (*fp)(int, int);
 ```
 
-This reads as: `fp` is a **pointer** (`*`) to a **function** taking `(int, int)` and returning `int`.
+これは次のように読む: `fp` は `(int, int)` を受け取り `int` を返す **関数** への **ポインタ** (`*`) である。
 
-The parentheses around `*fp` are critical — without them, `int *fp(int, int)` would declare a function returning `int *`.
+`*fp` を囲む括弧が重要で、括弧がなければ `int *fp(int, int)` は `int *` を返す関数の宣言になってしまう。
 
-## Implementation
+## 実装
 
-### Type Representation
+### 型の表現
 
-Function pointers are internally represented as `Ptr(Void)` — a simple 8-byte pointer. We don't track the full function signature in the type system. This is a simplification that works because:
+関数ポインタは内部的に `Ptr(Void)` として表現される（単純な8バイトポインタ）。型システムでは関数の完全なシグネチャを追跡しない。この簡略化が成立する理由は:
 
-1. x86-64 function pointers are always 8 bytes regardless of signature
-2. The calling convention is the same for all function types
-3. Type checking for function pointer arguments is not yet implemented
+1. x86-64 の関数ポインタはシグネチャに関係なく常に8バイト
+2. 呼び出し規約はすべての関数型で同一
+3. 関数ポインタ引数の型チェックはまだ実装されていない
 
-### AST Changes
+### AST の変更
 
-A new `FuncPtrCall` expression node is added to distinguish indirect calls from direct calls:
+間接呼び出しと直接呼び出しを区別するために、新しい `FuncPtrCall` 式ノードを追加:
 
 ```rust
 pub enum Expr {
@@ -45,11 +45,11 @@ pub enum Expr {
 }
 ```
 
-### Parser Changes
+### パーサーの変更
 
-#### Function Pointer Declaration Parsing
+#### 関数ポインタ宣言のパース
 
-In `var_decl()`, after parsing the base type, we check for the `(*` pattern to identify function pointer declarations:
+`var_decl()` で基本型をパースした後、`(*` パターンをチェックして関数ポインタ宣言を識別する:
 
 ```rust
 // After parse_type() returns the return type
@@ -58,39 +58,39 @@ if current == '(' && next == '*' {
 }
 ```
 
-The `parse_func_ptr_decl` method:
-1. Consumes `(` `*` `name` `)`
-2. Parses the parameter type list `(type, type, ...)`
-3. Creates a variable with type `Ptr(Void)`
-4. Handles optional initializer `= expr`
+`parse_func_ptr_decl` メソッドの処理:
+1. `(` `*` `name` `)` を消費する
+2. パラメータ型リスト `(type, type, ...)` をパースする
+3. `Ptr(Void)` 型の変数を作成する
+4. オプションの初期化子 `= expr` を処理する
 
-#### Function-to-Pointer Decay
+#### 関数からポインタへの暗黙変換
 
-When a function name appears as an expression (e.g., `fp = add`), and `add` is not a declared variable, `emit_load_var` treats it as a function name and generates:
+関数名が式として出現した場合（例: `fp = add`）、`add` が宣言済みの変数でなければ、`emit_load_var` はそれを関数名として扱い、以下を生成する:
 
 ```asm
 lea add(%rip), %rax
 ```
 
-This loads the function's address into `%rax` using RIP-relative addressing.
+これは RIP 相対アドレッシングを使って関数のアドレスを `%rax` にロードする。
 
-#### Distinguishing Direct vs Indirect Calls
+#### 直接呼び出しと間接呼び出しの区別
 
-In `primary()`, when parsing `name(args)`:
-- If `name` is a declared variable → `FuncPtrCall` (indirect call)
-- Otherwise → `FuncCall` (direct call)
+`primary()` で `name(args)` をパースする際:
+- `name` が宣言済みの変数 → `FuncPtrCall`（間接呼び出し）
+- それ以外 → `FuncCall`（直接呼び出し）
 
-The `is_var_declared()` method checks local scopes and global variables, but excludes `extern` declarations (which are function prototypes, not pointer variables).
+`is_var_declared()` メソッドはローカルスコープとグローバル変数をチェックするが、`extern` 宣言（ポインタ変数ではなく関数プロトタイプ）は除外する。
 
-### Code Generation
+### コード生成
 
-#### Direct Call (existing)
+#### 直接呼び出し（既存）
 
 ```asm
 call function_name
 ```
 
-#### Indirect Call via Function Pointer
+#### 関数ポインタ経由の間接呼び出し
 
 ```asm
   mov -8(%rbp), %rax    # load function pointer from variable
@@ -102,20 +102,20 @@ call function_name
   call *%r10            # indirect call through %r10
 ```
 
-We use `%r10` to hold the function pointer because:
-- It's a caller-saved register (callee can clobber it)
-- It's NOT used for argument passing (args use `%rdi`–`%r9`)
-- It's not clobbered by our argument evaluation code (which only uses `%rax`, `%rdi`, and the stack)
+関数ポインタの保持に `%r10` を使用する理由:
+- caller-saved レジスタである（呼ばれた側が自由に書き換えてよい）
+- 引数渡しに使用されない（引数は `%rdi`〜`%r9` を使用）
+- 引数評価コード（`%rax`、`%rdi`、スタックのみ使用）によって上書きされない
 
-The `call *%r10` instruction performs an indirect call — it reads the address from `%r10` and jumps to it.
+`call *%r10` 命令は間接呼び出しを行う。`%r10` からアドレスを読み取り、そこにジャンプする。
 
-### Stack Alignment
+### スタックアライメント
 
-The indirect call follows the same 16-byte stack alignment requirements as direct calls. The alignment check uses `stack_depth` to determine whether an extra 8-byte pad is needed before the call.
+間接呼び出しも直接呼び出しと同じ16バイトスタックアライメント要件に従う。アライメントチェックでは `stack_depth` を使って、呼び出し前に追加の8バイトパディングが必要かどうかを判定する。
 
-## Example
+## 使用例
 
-### C Source
+### C ソースコード
 
 ```c
 int add(int a, int b) { return a + b; }
@@ -125,7 +125,7 @@ int main() {
 }
 ```
 
-### Generated Assembly
+### 生成されるアセンブリ
 
 ```asm
   .globl main
@@ -153,7 +153,7 @@ main:
   jmp .Lreturn.main
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 // Basic function pointer call
@@ -169,10 +169,10 @@ int ret42() { return 42; }
 int main() { int (*fp)() = ret42; return fp(); }  // => 42
 ```
 
-## Limitations
+## 制限事項
 
-1. **No signature tracking**: The type system stores function pointers as `Ptr(Void)`, so there's no compile-time type checking of argument types or count.
+1. **シグネチャの追跡なし**: 型システムは関数ポインタを `Ptr(Void)` として格納するため、引数の型や個数のコンパイル時型チェックは行われない。
 
-2. **No `typedef` for function pointer types**: Patterns like `typedef int (*BinOp)(int, int);` are not yet supported.
+2. **関数ポインタ型の `typedef` 非対応**: `typedef int (*BinOp)(int, int);` のようなパターンはまだサポートされていない。
 
-3. **`%r10` clobbering**: If a function pointer call has arguments that themselves involve function calls, the `%r10` register could be clobbered. This doesn't occur in typical usage since argument expressions are usually simple.
+3. **`%r10` の上書きリスク**: 関数ポインタ呼び出しの引数にさらに関数呼び出しが含まれる場合、`%r10` レジスタが上書きされる可能性がある。ただし、引数式が単純なものである通常の使用では発生しない。

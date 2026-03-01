@@ -1,10 +1,10 @@
-# Step 15.2: long long Type
+# ステップ 15.2: long long 型
 
-## Overview
+## 概要
 
-`long long` and `unsigned long long` are already supported by treating them identically to `long`. On x86-64, both `long` and `long long` are 8 bytes, so no separate type variant is needed.
+`long long` と `unsigned long long` は、`long` と同一に扱うことで既にサポートされている。x86-64では `long` も `long long` も8バイトであるため、別個の型バリアントは不要である。
 
-The parser already handles `long long` and `long long int` by consuming two consecutive `Long` tokens and an optional `Int` token:
+パーサーは既に `long long` と `long long int` を処理しており、2つの連続した `Long` トークンとオプションの `Int` トークンを消費する:
 
 ```rust
 TokenKind::Long => {
@@ -21,4 +21,4 @@ TokenKind::Long => {
 }
 ```
 
-This step was already complete from previous implementation.
+このステップは以前の実装で既に完了していた。

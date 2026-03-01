@@ -1,46 +1,46 @@
-# Step 13.5: Debug Information (.file Directive)
+# Step 13.5: デバッグ情報（.fileディレクティブ）
 
-## Overview
+## 概要
 
-Add `.file` assembly directive to the generated output, enabling basic debug information for tools like GDB and `objdump`.
+生成される出力に`.file`アセンブリディレクティブを追加し、GDBや`objdump`などのツールで基本的なデバッグ情報を利用できるようにします。
 
-## Implementation
+## 実装
 
-### Codegen Changes
+### コード生成の変更
 
-The `Codegen` struct now takes a filename parameter:
+`Codegen`構造体がファイル名パラメータを受け取るようになりました:
 
 ```rust
 pub fn new(filename: &str) -> Self { ... }
 ```
 
-At the start of `generate()`, a `.file` directive is emitted:
+`generate()`の開始時に`.file`ディレクティブが出力されます:
 
 ```asm
   .file "example.c"
 ```
 
-This tells the assembler which source file the assembly was generated from. When compiled with `gcc -g`, this information is embedded in the resulting binary's DWARF debug info.
+これにより、アセンブリがどのソースファイルから生成されたかをアセンブラに伝えます。`gcc -g`でコンパイルすると、この情報が生成されるバイナリのDWARFデバッグ情報に埋め込まれます。
 
-### Main Entry Point
+### メインエントリポイント
 
-Updated `main.rs` to pass the filename to `Codegen`:
+`main.rs`を更新し、ファイル名を`Codegen`に渡すようにしました:
 
 ```rust
 let mut codegen = Codegen::new(filename);
 ```
 
-## Debug Information in Practice
+## 実際のデバッグ情報
 
-The `.file` directive is the most basic level of debug information. With this directive:
+`.file`ディレクティブは最も基本的なレベルのデバッグ情報です。このディレクティブにより:
 
-- `objdump -d` can show the source file name
-- GDB can display the filename in stack traces
-- `addr2line` can map addresses back to the source file
+- `objdump -d`でソースファイル名を表示できる
+- GDBがスタックトレースにファイル名を表示できる
+- `addr2line`でアドレスをソースファイルにマッピングできる
 
-For more detailed debugging (stepping through source lines), `.loc` directives would be needed at each statement, which requires line number tracking in the AST. This is left for future improvement.
+より詳細なデバッグ（ソース行のステップ実行）には、各文に`.loc`ディレクティブが必要であり、ASTでの行番号追跡が必要です。これは将来の改善に委ねます。
 
-## Assembly Output
+## アセンブリ出力
 
 ```asm
   .file "hello.c"

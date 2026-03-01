@@ -1,53 +1,53 @@
-# Step 13.3: Register Allocation Improvements
+# Step 13.3: レジスタ割り当ての改善
 
-## Overview
+## 概要
 
-Document the current register usage patterns and identify future improvement opportunities. The compiler currently uses a stack-machine model where all intermediate values pass through `%rax` and binary operations use `push`/`pop` for operand handling.
+現在のレジスタ使用パターンを文書化し、将来の改善機会を特定します。コンパイラは現在スタックマシンモデルを採用しており、すべての中間値は`%rax`を経由し、二項演算では`push`/`pop`でオペランドを処理しています。
 
-## Current Register Usage
+## 現在のレジスタ使用状況
 
-### Dedicated Registers
+### 専用レジスタ
 
-| Register | Usage |
+| レジスタ | 用途 |
 |---|---|
-| `%rax` | Primary accumulator — all expression results |
-| `%rdi` | Binary operation RHS (popped from stack) |
-| `%rsp` | Stack pointer |
-| `%rbp` | Frame pointer |
-| `%rcx` | Shift counts, `rep movsb` counter, bit-field masks |
-| `%rsi` | `rep movsb` source |
-| `%r10` | Function pointer indirect calls |
-| `%al` | Variadic function flag (SSE register count) |
+| `%rax` | 主要アキュムレータ — すべての式の結果 |
+| `%rdi` | 二項演算の右辺（スタックからpop） |
+| `%rsp` | スタックポインタ |
+| `%rbp` | フレームポインタ |
+| `%rcx` | シフトカウント、`rep movsb`カウンタ、ビットフィールドマスク |
+| `%rsi` | `rep movsb`のソース |
+| `%r10` | 関数ポインタの間接呼び出し |
+| `%al` | 可変長引数フラグ（SSEレジスタ数） |
 
-### Calling Convention (System V AMD64 ABI)
+### 呼び出し規約（System V AMD64 ABI）
 
-Arguments: `%rdi`, `%rsi`, `%rdx`, `%rcx`, `%r8`, `%r9`
-Return: `%rax`
-Callee-saved: `%rbx`, `%r12`-`%r15`, `%rbp`
-Caller-saved: `%rax`, `%rcx`, `%rdx`, `%rsi`, `%rdi`, `%r8`-`%r11`
+引数: `%rdi`, `%rsi`, `%rdx`, `%rcx`, `%r8`, `%r9`
+戻り値: `%rax`
+呼び出し先退避（callee-saved）: `%rbx`, `%r12`-`%r15`, `%rbp`
+呼び出し元退避（caller-saved）: `%rax`, `%rcx`, `%rdx`, `%rsi`, `%rdi`, `%r8`-`%r11`
 
-### Available Unused Registers
+### 未使用の利用可能なレジスタ
 
-The following registers are currently unused and could be leveraged:
+以下のレジスタは現在未使用であり、活用の余地があります:
 
-- `%rbx` (callee-saved) — could cache frequently accessed variables
-- `%r11` (caller-saved) — could be used as a second temporary
-- `%r12`-`%r15` (callee-saved) — could hold loop variables
+- `%rbx`（callee-saved）— 頻繁にアクセスされる変数のキャッシュに使用可能
+- `%r11`（caller-saved）— 第2のテンポラリとして使用可能
+- `%r12`-`%r15`（callee-saved）— ループ変数の保持に使用可能
 
-## Peephole Optimizations Already Applied (Step 13.2)
+## 既に適用済みのピープホール最適化（Step 13.2）
 
-- Adjacent `push %rax; pop %reg` → `mov %rax, %reg`
-- Adjacent `push %rax; pop %rax` → removed
+- 隣接する`push %rax; pop %reg` → `mov %rax, %reg`
+- 隣接する`push %rax; pop %rax` → 削除
 
-## Constant Folding Already Applied (Step 13.1)
+## 既に適用済みの定数畳み込み（Step 13.1）
 
-- Compile-time evaluation of constant expressions eliminates runtime instructions entirely
+- 定数式のコンパイル時評価により、実行時命令を完全に排除
 
-## Future Register Allocation Strategies
+## 将来のレジスタ割り当て戦略
 
-### Simple Variable Caching
+### 単純な変数キャッシュ
 
-For variables accessed multiple times in a basic block, load once into a callee-saved register:
+基本ブロック内で複数回アクセスされる変数を、一度callee-savedレジスタにロードする:
 
 ```asm
 ; Before (current):
@@ -62,16 +62,16 @@ For variables accessed multiple times in a basic block, load once into a callee-
   lea (%rbx, %rbx), %rax   ; a + a without stack operations
 ```
 
-### Linear Scan Register Allocation
+### 線形スキャンレジスタ割り当て
 
-A more sophisticated approach would assign variables to registers across their live ranges:
+より高度なアプローチとして、変数の生存期間に基づいてレジスタを割り当てる方法があります:
 
-1. Compute live ranges for each variable
-2. Sort by start position
-3. Assign available registers, spilling to stack when necessary
+1. 各変数の生存期間を計算する
+2. 開始位置でソートする
+3. 利用可能なレジスタを割り当て、不足時はスタックにスピルする
 
-This would require fundamental changes to the code generation architecture and is deferred to a future phase.
+これにはコード生成アーキテクチャの根本的な変更が必要であり、将来のフェーズに先送りします。
 
-## Impact Assessment
+## 影響評価
 
-The current stack-machine approach generates correct but not optimal code. For a compiler targeting PostgreSQL compilation (where correctness is paramount), the current approach is acceptable. The peephole pass (Step 13.2) addresses the most common redundancies.
+現在のスタックマシン方式は正しいが最適ではないコードを生成します。PostgreSQLのコンパイルを目標とするコンパイラ（正確性が最重要）にとって、現在のアプローチは十分です。ピープホールパス（Step 13.2）が最も一般的な冗長性に対処しています。

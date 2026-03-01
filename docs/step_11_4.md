@@ -1,12 +1,12 @@
-# Step 11.4: Callback Pattern
+# ステップ 11.4: コールバックパターン
 
-## Overview
+## 概要
 
-This step extends function pointer support to work as function parameters, enabling the callback pattern. Callbacks are fundamental to C programming — they power `qsort`, signal handlers, event-driven systems, and any form of higher-order programming.
+このステップでは、関数ポインタのサポートを拡張し、関数パラメータとして使えるようにすることで、コールバックパターンを実現する。コールバックは C プログラミングの基本要素であり、`qsort`、シグナルハンドラ、イベント駆動システム、あらゆる形式の高階プログラミングを支えている。
 
-## Callback Pattern
+## コールバックパターン
 
-A callback is a function passed as an argument to another function, which then calls it:
+コールバックとは、別の関数に引数として渡される関数であり、渡された先の関数から呼び出される:
 
 ```c
 int apply(int (*f)(int), int x) {
@@ -20,13 +20,13 @@ int main() {
 }
 ```
 
-The key insight: `f` is just a local variable of type `Ptr(Void)` (8-byte pointer). When called as `f(x)`, it generates an indirect call `call *%r10`.
+重要なポイント: `f` は `Ptr(Void)` 型（8バイトポインタ）の単なるローカル変数にすぎない。`f(x)` として呼び出されると、間接呼び出し `call *%r10` が生成される。
 
-## Parser Changes
+## パーサーの変更
 
-### Function Pointer Parameters
+### 関数ポインタパラメータ
 
-The parameter parsing in `function_or_prototype()` was extended to recognize function pointer syntax in parameter positions:
+`function_or_prototype()` のパラメータパースを拡張し、パラメータ位置での関数ポインタ構文を認識するようにした:
 
 ```
 parameter = type ident                     // normal parameter
@@ -34,7 +34,7 @@ parameter = type ident                     // normal parameter
           | type ident "[" "]"             // array parameter
 ```
 
-After `parse_type()` returns the base type, the parser checks for `(` `*`:
+`parse_type()` が基本型を返した後、パーサーは `(` `*` をチェックする:
 
 ```rust
 if current == '(' && next == '*' {
@@ -44,18 +44,18 @@ if current == '(' && next == '*' {
 }
 ```
 
-The parameter type list `(int, int)` is parsed but the types are not stored — the function pointer is simply typed as `Ptr(Void)`.
+パラメータ型リスト `(int, int)` はパースされるが、型情報は保存されない。関数ポインタは単純に `Ptr(Void)` として型付けされる。
 
-### Calling Convention
+### 呼び出し規約
 
-When `f(x)` is called inside a function where `f` is a parameter:
-1. The parser sees `f` is a declared variable → generates `FuncPtrCall`
-2. Code generation loads `f` from its stack slot
-3. Saves the pointer to `%r10`
-4. Sets up arguments in registers
-5. Calls `call *%r10`
+関数内で `f` がパラメータである場合に `f(x)` が呼ばれると:
+1. パーサーは `f` が宣言済み変数であることを認識 → `FuncPtrCall` を生成
+2. コード生成が `f` をスタックスロットからロード
+3. ポインタを `%r10` に保存
+4. 引数をレジスタにセットアップ
+5. `call *%r10` を実行
 
-## Example: map_sum with Callback
+## 使用例: コールバックによる map_sum
 
 ```c
 int map_sum(int *a, int n, int (*f)(int)) {
@@ -74,7 +74,7 @@ int main() {
 }
 ```
 
-### Generated Assembly for `f(a[i])`:
+### `f(a[i])` の生成アセンブリ:
 
 ```asm
   # Load f (function pointer from parameter)
@@ -91,7 +91,7 @@ int main() {
   call *%r10              # indirect call through f
 ```
 
-## Call Flow
+## 呼び出しフロー
 
 ```
 main()
@@ -111,7 +111,7 @@ main()
                                         └─ returns x*2
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 // Basic callback
@@ -137,13 +137,13 @@ int main() {
 }
 ```
 
-## Phase 11 Complete
+## フェーズ 11 完了
 
-With this step, Phase 11 (Standard Library Compatibility) is complete:
+このステップで、フェーズ 11（標準ライブラリ互換性）が完了した:
 
-| Step | Feature | Description |
-|------|---------|-------------|
-| 11.1 | printf | External function calls via libc linking |
-| 11.2 | Variadic args | `va_list`, `va_start`, `va_arg` with register save area |
-| 11.3 | Function pointers | Declaration, function-to-pointer decay, `call *%r10` |
-| 11.4 | Callbacks | Function pointers as parameters, enabling higher-order patterns |
+| ステップ | 機能 | 説明 |
+|----------|------|------|
+| 11.1 | printf | libc リンクによる外部関数呼び出し |
+| 11.2 | 可変長引数 | `va_list`、`va_start`、`va_arg` とレジスタ保存領域 |
+| 11.3 | 関数ポインタ | 宣言、関数からポインタへの暗黙変換、`call *%r10` |
+| 11.4 | コールバック | パラメータとしての関数ポインタ、高階パターンの実現 |

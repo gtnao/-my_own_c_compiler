@@ -1,8 +1,8 @@
-# Step 12.9: Struct Bit-Fields
+# ステップ 12.9: 構造体ビットフィールド
 
-## Overview
+## 概要
 
-Support bit-field declarations in structs, allowing multiple values to be packed within a single storage unit (e.g., a 32-bit `int`):
+構造体内のビットフィールド宣言をサポートし、複数の値を1つのストレージユニット（例: 32ビットの `int`）にパッキングできるようにする:
 
 ```c
 struct {
@@ -14,11 +14,11 @@ s.b = 3;
 // Both fields share a single 4-byte int
 ```
 
-## Implementation
+## 実装
 
-### 1. StructMember Extension (types.rs)
+### 1. StructMember の拡張（types.rs）
 
-Added `bit_width` and `bit_offset` fields to `StructMember`:
+`StructMember` に `bit_width` と `bit_offset` フィールドを追加:
 
 ```rust
 pub struct StructMember {
@@ -30,30 +30,30 @@ pub struct StructMember {
 }
 ```
 
-### 2. Parsing (parser.rs)
+### 2. パース（parser.rs）
 
-After parsing the member name, check for `: width`:
+メンバ名をパースした後、`: width` があるかチェックする:
 
 ```c
 struct { int a : 4; int b : 4; }
 ```
 
-The parser tracks the current bit offset within the storage unit. When a bit-field doesn't fit in the current unit, it moves to the next aligned storage unit.
+パーサーはストレージユニット内の現在のビットオフセットを追跡する。ビットフィールドが現在のユニットに収まらない場合、次のアライメントされたストレージユニットに移動する。
 
-**Layout algorithm:**
-1. For the first bit-field, align `offset` to the type's alignment
-2. Check if `bit_offset + bit_width > storage_bits`
-3. If it fits, pack into current unit at `bit_offset`
-4. If not, advance `offset` to next storage unit, reset `bit_offset = 0`
-5. When a normal (non-bit-field) member follows, finish the current storage unit
+**レイアウトアルゴリズム:**
+1. 最初のビットフィールドでは、`offset` を型のアライメントに合わせる
+2. `bit_offset + bit_width > storage_bits` かチェック
+3. 収まる場合、現在のユニットの `bit_offset` 位置にパッキング
+4. 収まらない場合、`offset` を次のストレージユニットに進め、`bit_offset = 0` にリセット
+5. 通常の（ビットフィールドでない）メンバが続く場合、現在のストレージユニットを終了
 
-### 3. Bit-Field Read (codegen.rs)
+### 3. ビットフィールドの読み取り（codegen.rs）
 
-Reading a bit-field value:
-1. Compute the address of the storage unit (`gen_addr`)
-2. Load the full storage unit (`emit_load_indirect`)
-3. Right-shift by `bit_offset` to move the field to bit 0
-4. AND with a mask of `(1 << bit_width) - 1` to extract only the field bits
+ビットフィールドの値を読み取る手順:
+1. ストレージユニットのアドレスを計算（`gen_addr`）
+2. ストレージユニット全体をロード（`emit_load_indirect`）
+3. `bit_offset` だけ右シフトしてフィールドをビット0に移動
+4. `(1 << bit_width) - 1` のマスクで AND を取り、フィールドのビットのみを抽出
 
 ```asm
 ; Read s.b where bit_width=4, bit_offset=4
@@ -63,16 +63,16 @@ Reading a bit-field value:
   and $15, %rax            ; mask to 4 bits (0xF)
 ```
 
-### 4. Bit-Field Write (codegen.rs)
+### 4. ビットフィールドの書き込み（codegen.rs）
 
-Writing a bit-field value requires read-modify-write:
-1. Evaluate the new value (RHS)
-2. Mask it to `bit_width` bits
-3. Shift it to the correct `bit_offset`
-4. Load the current storage unit value
-5. Clear the old field bits (AND with inverted mask)
-6. Set the new field bits (OR with shifted value)
-7. Store the result back
+ビットフィールドの値を書き込むには、読み取り-変更-書き戻し（read-modify-write）が必要:
+1. 新しい値（右辺値）を評価
+2. `bit_width` ビットにマスク
+3. 正しい `bit_offset` にシフト
+4. 現在のストレージユニットの値をロード
+5. 古いフィールドビットをクリア（反転マスクで AND）
+6. 新しいフィールドビットをセット（シフト済みの値で OR）
+7. 結果を書き戻す
 
 ```asm
 ; Write s.b = 3 where bit_width=4, bit_offset=4
@@ -90,7 +90,7 @@ Writing a bit-field value requires read-modify-write:
   movl %eax, (%rdi)        ; store back
 ```
 
-## Storage Layout Example
+## ストレージレイアウトの例
 
 ```c
 struct {
@@ -99,20 +99,20 @@ struct {
 } s;
 ```
 
-Both `x` and `y` share a single 4-byte `int` at offset 0:
+`x` と `y` はどちらもオフセット0の1つの4バイト `int` を共有する:
 ```
 bit:  7 6 5 4 3 2 1 0
       [  y      ][x  ]
 ```
 
-## Limitations
+## 制限事項
 
-- Only unsigned extraction is implemented (no sign extension for signed bit-fields)
-- Zero-width bit-fields (`int : 0`) for forcing alignment are not supported
-- Anonymous bit-fields are not supported
-- Bit-fields wider than the storage unit are not validated
+- 符号なし抽出のみ実装済み（符号付きビットフィールドの符号拡張は未対応）
+- アライメント強制用のゼロ幅ビットフィールド（`int : 0`）は未対応
+- 無名ビットフィールドは未対応
+- ストレージユニットより幅の広いビットフィールドの検証は未実装
 
-## Test Cases
+## テストケース
 
 ```c
 struct { int a : 4; int b : 4; } s;

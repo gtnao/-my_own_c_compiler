@@ -1,54 +1,54 @@
-# Step 14.4: Inline and Static Inline Functions
+# Step 14.4: inlineおよびstatic inline関数
 
-## Overview
+## 概要
 
-Add support for `inline`, `static inline`, `__inline`, and `__inline__` function qualifiers. These are consumed and ignored — functions are always compiled normally (never actually inlined at the compiler level).
+`inline`、`static inline`、`__inline`、`__inline__`関数修飾子のサポートを追加します。これらは消費されて無視されます — 関数は常に通常通りコンパイルされ、コンパイラレベルでは実際にインライン化されることはありません。
 
-## Why This Matters
+## なぜ必要か
 
-PostgreSQL and system headers use `static inline` extensively for small utility functions in headers:
+PostgreSQLやシステムヘッダでは、ヘッダ内の小さなユーティリティ関数に`static inline`が広く使用されています:
 
 ```c
 static inline int Max(int a, int b) { return a > b ? a : b; }
 static inline void *palloc(size_t size) { ... }
 ```
 
-GCC also uses `__inline` and `__inline__` variants in its built-in headers.
+GCCも組み込みヘッダで`__inline`や`__inline__`の変形を使用します。
 
-## Implementation
+## 実装
 
-### Token
+### トークン
 
-Added `Inline` token kind.
+`Inline`トークン種別を追加しました。
 
-### Lexer
+### レキサー
 
-Recognizes three spellings:
-- `inline` — C99 standard
-- `__inline` — GCC extension
-- `__inline__` — GCC extension (double underscore form)
+3つの綴りを認識します:
+- `inline` — C99標準
+- `__inline` — GCC拡張
+- `__inline__` — GCC拡張（アンダースコア2つの形式）
 
-### Parser
+### パーサー
 
-`inline` is treated as a type qualifier and consumed/ignored in:
+`inline`は型修飾子として扱われ、以下の箇所で消費・無視されます:
 
-1. **`parse_type()`** — skipped alongside `__attribute__` before the base type
-2. **`is_type_keyword()`** — recognized as part of type declarations
-3. **`stmt()`** — recognized as starting a variable/function declaration
-4. **Top-level `parse()`** — `static` at top level is consumed, then `inline` is handled by `parse_type()` → the function is parsed normally
+1. **`parse_type()`** — ベース型の前で`__attribute__`と並んでスキップ
+2. **`is_type_keyword()`** — 型宣言の一部として認識
+3. **`stmt()`** — 変数/関数宣言の開始として認識
+4. **トップレベルの`parse()`** — トップレベルの`static`が消費された後、`inline`は`parse_type()`で処理され、関数は通常通りパースされる
 
-### Top-level `static`
+### トップレベルの`static`
 
-Previously, `static` at the top level was only handled for local static variables. Now, a top-level `static` keyword is simply consumed so that `static inline int foo()` and `static int x` work correctly — they're treated the same as their non-static counterparts.
+以前は、トップレベルの`static`はローカル静的変数に対してのみ処理されていました。今回、トップレベルの`static`キーワードは単純に消費されるようになり、`static inline int foo()`や`static int x`が正しく動作します — 非staticの対応するものと同じように扱われます。
 
-## Behavior
+## 動作
 
-- `inline` is a hint to the compiler, not a requirement
-- Our compiler never actually inlines functions — all functions are compiled as separate symbols
-- `static inline` functions are emitted as global symbols (not truly static/local linkage)
-- This matches the minimum behavior needed for compatibility
+- `inline`はコンパイラへのヒントであり、要件ではない
+- 本コンパイラは実際に関数をインライン化しない — すべての関数は個別のシンボルとしてコンパイルされる
+- `static inline`関数はグローバルシンボルとして出力される（真のstatic/ローカルリンケージではない）
+- これは互換性に必要な最小限の動作と一致する
 
-## Test Cases
+## テストケース
 
 ```c
 static inline int add(int a, int b) { return a + b; }

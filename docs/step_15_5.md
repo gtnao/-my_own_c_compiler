@@ -1,8 +1,8 @@
-# Step 15.5: Anonymous Struct/Union Members (C11)
+# Step 15.5: 匿名構造体/共用体メンバ（C11）
 
-## Overview
+## 概要
 
-C11 allows anonymous struct/union members inside a parent struct/union. The inner members are accessed directly through the parent:
+C11では、親の構造体/共用体の中に匿名の構造体/共用体メンバを含めることが許されています。内側のメンバには、親を通じて直接アクセスできます。
 
 ```c
 struct S {
@@ -15,9 +15,9 @@ s.a = 42;  // access union member directly
 s.c = 10;
 ```
 
-## Implementation
+## 実装
 
-When parsing struct/union members, if we encounter a struct/union type followed immediately by `;` (no member name), we treat it as an anonymous member and flatten its members into the parent:
+構造体/共用体のメンバを解析する際、構造体/共用体型の直後にセミコロン `;`（メンバ名なし）が来た場合、それを匿名メンバとして扱い、内側のメンバを親にフラット化（展開）します。
 
 ```rust
 if self.current().kind == TokenKind::Semicolon {
@@ -44,7 +44,7 @@ if self.current().kind == TokenKind::Semicolon {
 }
 ```
 
-## Layout Example
+## レイアウト例
 
 ```
 struct S {
@@ -59,7 +59,7 @@ struct S {
 // member "c": offset 8, type int
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 // Anonymous union inside struct

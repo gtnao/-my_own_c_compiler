@@ -1,22 +1,22 @@
-# Step 16.1: Variadic Macros (__VA_ARGS__)
+# Step 16.1: 可変引数マクロ（__VA_ARGS__）
 
-## Overview
+## 概要
 
-Add support for variadic (variable-argument) macros using `...` and `__VA_ARGS__`. This is essential for PostgreSQL's `elog()`, `ereport()`, and many other logging/error-reporting macros.
+`...` と `__VA_ARGS__` を使った可変引数（variadic）マクロのサポートを追加します。これは、PostgreSQLの `elog()`、`ereport()` をはじめとする多くのロギング/エラー報告マクロに不可欠です。
 
-## How It Works
+## 仕組み
 
-### Macro Definition
+### マクロ定義
 
 ```c
 #define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
 ```
 
-The `...` in the parameter list indicates the macro accepts variable arguments. In the macro body, `__VA_ARGS__` expands to all the extra arguments passed beyond the named parameters.
+パラメータリスト内の `...` は、マクロが可変個の引数を受け取ることを示します。マクロ本体では、`__VA_ARGS__` が名前付きパラメータを超えて渡されたすべての追加引数に展開されます。
 
-### Implementation
+### 実装
 
-**MacroDef** now tracks whether a macro is variadic:
+**MacroDef** にマクロが可変引数かどうかを追跡するフィールドを追加しました。
 
 ```rust
 enum MacroDef {
@@ -25,11 +25,11 @@ enum MacroDef {
 }
 ```
 
-**Parsing**: When parsing `#define`, if the last parameter is `...`, it's removed from the parameter list and `is_variadic` is set to `true`.
+**解析**: `#define` を解析する際、最後のパラメータが `...` であれば、それをパラメータリストから取り除き、`is_variadic` を `true` に設定します。
 
-**Expansion**: When expanding a variadic macro call:
-1. Named parameters are matched to their corresponding arguments as usual
-2. Any extra arguments beyond the named parameters are joined with `, ` and substituted for `__VA_ARGS__` in the body
+**展開**: 可変引数マクロの呼び出しを展開する際の動作は以下の通りです。
+1. 名前付きパラメータは通常通り対応する引数にマッチします
+2. 名前付きパラメータを超える余分な引数は `, ` で結合され、本体中の `__VA_ARGS__` に置換されます
 
 ```rust
 if is_variadic {
@@ -43,7 +43,7 @@ if is_variadic {
 }
 ```
 
-## Examples
+## 使用例
 
 ```c
 // Basic variadic macro
@@ -57,7 +57,7 @@ CALL(add, 20, 22);
 // Expands to: add(20, 22);
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 #define FIRST(a, ...) a

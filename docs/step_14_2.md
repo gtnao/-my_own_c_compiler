@@ -1,82 +1,82 @@
-# Step 14.2: Float and Double Types
+# Step 14.2: float型とdouble型
 
-## Overview
+## 概要
 
-Add `float` (32-bit IEEE 754) and `double` (64-bit IEEE 754) floating-point type support, including:
+`float`（32ビットIEEE 754）および`double`（64ビットIEEE 754）浮動小数点型のサポートを追加します。以下を含みます:
 
-- Type declarations (`float f`, `double d`)
-- Float literals (`3.14`, `1.5f`)
-- Arithmetic operations (`+`, `-`, `*`, `/`)
-- Comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`)
-- Type conversions (int↔float, int↔double, float↔double)
-- Cast expressions (`(int)3.14`, `(double)5`)
+- 型宣言（`float f`, `double d`）
+- 浮動小数点リテラル（`3.14`, `1.5f`）
+- 算術演算（`+`, `-`, `*`, `/`）
+- 比較演算子（`==`, `!=`, `<`, `<=`, `>`, `>=`）
+- 型変換（int⇔float, int⇔double, float⇔double）
+- キャスト式（`(int)3.14`, `(double)5`）
 - `sizeof(float)` = 4, `sizeof(double)` = 8
 
-## x86-64 Floating-Point Architecture
+## x86-64の浮動小数点アーキテクチャ
 
-### XMM Registers
+### XMMレジスタ
 
-x86-64 provides 16 128-bit SSE registers (`%xmm0`–`%xmm15`) for floating-point operations. Unlike the general-purpose registers (`%rax`, etc.), XMM registers use dedicated SSE instructions:
+x86-64は浮動小数点演算用に16個の128ビットSSEレジスタ（`%xmm0`〜`%xmm15`）を提供します。汎用レジスタ（`%rax`など）とは異なり、XMMレジスタは専用のSSE命令を使用します:
 
-| Register | Purpose |
+| レジスタ | 用途 |
 |---|---|
-| `%xmm0` | Primary accumulator for float/double operations |
-| `%xmm1` | Secondary operand in binary operations |
-| `%xmm0`–`%xmm7` | Function argument passing (System V ABI) |
-| `%xmm0` | Function return value |
+| `%xmm0` | float/double演算の主要アキュムレータ |
+| `%xmm1` | 二項演算の副オペランド |
+| `%xmm0`〜`%xmm7` | 関数引数の受け渡し（System V ABI） |
+| `%xmm0` | 関数の戻り値 |
 
-### SSE Instruction Suffixes
+### SSE命令のサフィックス
 
-- `ss` — Scalar Single-precision (float, 32-bit)
-- `sd` — Scalar Double-precision (double, 64-bit)
+- `ss` — スカラー単精度（float, 32ビット）
+- `sd` — スカラー倍精度（double, 64ビット）
 
-### Key Instructions
+### 主要な命令
 
-| Operation | Float | Double |
+| 操作 | float | double |
 |---|---|---|
-| Load from memory | `movss (%rax), %xmm0` | `movsd (%rax), %xmm0` |
-| Store to memory | `movss %xmm0, (%rdi)` | `movsd %xmm0, (%rdi)` |
-| Add | `addss %xmm1, %xmm0` | `addsd %xmm1, %xmm0` |
-| Subtract | `subss %xmm1, %xmm0` | `subsd %xmm1, %xmm0` |
-| Multiply | `mulss %xmm1, %xmm0` | `mulsd %xmm1, %xmm0` |
-| Divide | `divss %xmm1, %xmm0` | `divsd %xmm1, %xmm0` |
-| Compare | `ucomiss %xmm1, %xmm0` | `ucomisd %xmm1, %xmm0` |
+| メモリからのロード | `movss (%rax), %xmm0` | `movsd (%rax), %xmm0` |
+| メモリへのストア | `movss %xmm0, (%rdi)` | `movsd %xmm0, (%rdi)` |
+| 加算 | `addss %xmm1, %xmm0` | `addsd %xmm1, %xmm0` |
+| 減算 | `subss %xmm1, %xmm0` | `subsd %xmm1, %xmm0` |
+| 乗算 | `mulss %xmm1, %xmm0` | `mulsd %xmm1, %xmm0` |
+| 除算 | `divss %xmm1, %xmm0` | `divsd %xmm1, %xmm0` |
+| 比較 | `ucomiss %xmm1, %xmm0` | `ucomisd %xmm1, %xmm0` |
 
-### Type Conversion Instructions
+### 型変換命令
 
-| Conversion | Instruction |
+| 変換 | 命令 |
 |---|---|
 | int → float | `cvtsi2ss %rax, %xmm0` |
 | int → double | `cvtsi2sd %rax, %xmm0` |
-| float → int (truncate) | `cvttss2si %xmm0, %rax` |
-| double → int (truncate) | `cvttsd2si %xmm0, %rax` |
+| float → int（切り捨て） | `cvttss2si %xmm0, %rax` |
+| double → int（切り捨て） | `cvttsd2si %xmm0, %rax` |
 | float → double | `cvtss2sd %xmm0, %xmm0` |
 | double → float | `cvtsd2ss %xmm0, %xmm0` |
 
-Note: `cvttss2si` and `cvttsd2si` use **truncation** (toward zero), matching C's cast semantics. The non-truncating variants (`cvtss2si`, `cvtsd2si`) use the current rounding mode (default: round-to-nearest), which is NOT what C's `(int)` cast does.
+注: `cvttss2si`と`cvttsd2si`は**切り捨て**（ゼロ方向への丸め）を使用し、Cのキャストセマンティクスと一致します。非切り捨て版（`cvtss2si`, `cvtsd2si`）は現在の丸めモード（デフォルト: 最近接偶数への丸め）を使用しますが、これはCの`(int)`キャストの動作ではありません。
 
-## Implementation
+## 実装
 
-### Dual-Register Convention
+### デュアルレジスタ規約
 
-The compiler maintains two accumulator conventions:
-- **Integer expressions** → result in `%rax`
-- **Float/double expressions** → result in `%xmm0`
+コンパイラは2つのアキュムレータ規約を維持します:
+- **整数式** → 結果は`%rax`に格納
+- **float/double式** → 結果は`%xmm0`に格納
 
-The `expr_type()` method determines which register convention an expression uses. At boundaries (assignment, cast, function call), conversion instructions bridge between the two.
+`expr_type()`メソッドが式がどちらのレジスタ規約を使用するかを決定します。境界（代入、キャスト、関数呼び出し）では、変換命令が2つの間を橋渡しします。
 
-### Float Literal Loading
+### 浮動小数点リテラルのロード
 
-Float literals are stored as `f64` in the AST (C default: bare literals are `double`). Loading uses the integer register as an intermediary:
+浮動小数点リテラルはAST内で`f64`として格納されます（Cのデフォルト: 裸のリテラルは`double`）。ロードには整数レジスタを中間経由として使用します:
 
 ```asm
   movabs $4614253070214989087, %rax   # f64 bit pattern of 3.14
   movq %rax, %xmm0                   # move to XMM register
 ```
 
-### Stack-Based Float Operations
+### スタックベースの浮動小数点演算
 
-Float/double values use the same stack-machine approach as integers, but with different push/pop:
+float/double値は整数と同じスタックマシン方式を使用しますが、push/popが異なります:
 
 ```rust
 fn push_float(&mut self) {
@@ -92,9 +92,9 @@ fn pop_float(&mut self, reg: &str) {
 }
 ```
 
-### Binary Operation Type Promotion
+### 二項演算の型昇格
 
-When one operand is `double` and the other is `float` or `int`, the operation is performed in double precision:
+一方のオペランドが`double`で、もう一方が`float`または`int`の場合、演算は倍精度で実行されます:
 
 ```
 int + double → cvtsi2sd → addsd (result: double)
@@ -102,30 +102,30 @@ float + double → cvtss2sd → addsd (result: double)
 float + float → addss (result: float)
 ```
 
-### Float Comparisons with `ucomiss`/`ucomisd`
+### `ucomiss`/`ucomisd`による浮動小数点の比較
 
-The `ucomiss` and `ucomisd` instructions set CPU flags differently from integer `cmp`:
+`ucomiss`および`ucomisd`命令は、整数の`cmp`とは異なるCPUフラグを設定します:
 
-| Condition | Flag State | Set Instruction |
+| 条件 | フラグ状態 | セット命令 |
 |---|---|---|
 | xmm0 > xmm1 | CF=0, ZF=0 | `seta` |
 | xmm0 >= xmm1 | CF=0 | `setae` |
 | xmm0 < xmm1 | CF=1 | `setb` |
 | xmm0 <= xmm1 | CF=1 or ZF=1 | `setbe` |
 | xmm0 == xmm1 | ZF=1, PF=0 | `sete` + `setnp` |
-| Unordered (NaN) | PF=1 | — |
+| 順序なし（NaN） | PF=1 | — |
 
-For equality, both `ZF` and `PF` must be checked because NaN comparisons set `PF=1`.
+等値比較では、NaN同士の比較で`PF=1`がセットされるため、`ZF`と`PF`の両方をチェックする必要があります。
 
-### Lexer Changes
+### レキサーの変更
 
-The number lexer was extended to detect floating-point literals:
-- Decimal point: `3.14`, `.5`, `3.`
-- Exponent: `1e10`, `1.5e-3`
-- Float suffix: `3.14f`, `1.0F`
-- Integer suffixes (`L`, `l`, `U`, `u`) are also now consumed and ignored.
+数値レキサーを拡張して浮動小数点リテラルを検出するようにしました:
+- 小数点: `3.14`, `.5`, `3.`
+- 指数: `1e10`, `1.5e-3`
+- floatサフィックス: `3.14f`, `1.0F`
+- 整数サフィックス（`L`, `l`, `U`, `u`）も消費して無視するようにしました。
 
-## Test Cases
+## テストケース
 
 ```c
 double a = 3.14; return (int)a;           // → 3 (truncation)

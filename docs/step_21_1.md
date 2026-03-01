@@ -1,14 +1,14 @@
-# Step 21.1: GCC Preprocessor Compatibility — Parsing Fixes
+# Step 21.1: GCCプリプロセッサ互換性 -- パーシング修正
 
-## Overview
+## 概要
 
-This step fixes multiple parsing issues discovered when compiling PostgreSQL backend source files preprocessed with `gcc -E`. The goal is to successfully parse all 331 PostgreSQL backend `.c` files through our compiler.
+このステップでは、`gcc -E` でプリプロセスされたPostgreSQLバックエンドソースファイルのコンパイル時に発見された複数のパーシング問題を修正します。目標は、すべての331個のPostgreSQLバックエンド `.c` ファイルを本コンパイラで正常にパースすることです。
 
-## Changes
+## 変更内容
 
-### 1. Extern Function Definitions
+### 1. extern関数定義
 
-GCC preprocessor output can produce `extern` function definitions (not just prototypes):
+GCCプリプロセッサの出力では、`extern` 付きの関数定義（プロトタイプだけでなく）が生成されることがあります。
 
 ```c
 extern tuplehash_hash *tuplehash_create(MemoryContext ctx, uint32 nelements,
@@ -18,63 +18,63 @@ extern tuplehash_hash *tuplehash_create(MemoryContext ctx, uint32 nelements,
 }
 ```
 
-In C, `extern` on a function definition is legal (it's the default linkage), but our parser only handled extern prototypes (expecting `;` after parameter list).
+C言語では関数定義に `extern` を付けることは合法です（デフォルトのリンケージ）が、本コンパイラのパーサーはexternプロトタイプ（パラメータリスト後に `;` を期待）のみを処理していました。
 
-**Fix**: After the existing extern prototype handler skips the parameter list with depth matching, check if the current token is `{` (function body). If so, restore the parser position and re-parse using `function_or_prototype()`.
+**修正**: 既存のexternプロトタイプハンドラがパラメータリストを深さマッチングでスキップした後、現在のトークンが `{`（関数本体）かどうかを確認します。そうであれば、パーサー位置を復元し、`function_or_prototype()` を使って再解析します。
 
-Key insight: We preserve the robust brace-depth-based parameter skipping for prototypes (which handles complex glibc parameter declarations), and only fall back to full function parsing when `{` is detected after the parameters.
+重要なポイント: 堅牢な波括弧深さベースのパラメータスキッピングはプロトタイプ用に維持し（複雑なglibcパラメータ宣言を処理するため）、パラメータの後に `{` が検出された場合にのみ完全な関数解析にフォールバックします。
 
-### 2. Non-Extern Comma-Separated Global Variables
+### 2. extern以外のカンマ区切りグローバル変数
 
-PostgreSQL declares multiple global variables in a single declaration:
+PostgreSQLは単一の宣言で複数のグローバル変数を宣言します。
 
 ```c
 sigset_t UnBlockSig, BlockSig, StartupBlockSig;
 ```
 
-The extern comma-separated handler already existed, but non-extern global variables used the same pattern without handling.
+externのカンマ区切りハンドラは既に存在していましたが、extern以外のグローバル変数は同じパターンに対応していませんでした。
 
-**Fix**: Added comma-separated handling in `global_var()` after the initial variable name is parsed. Supports pointer stars and array dimensions for subsequent names.
+**修正**: `global_var()` で最初の変数名が解析された後に、カンマ区切りの処理を追加しました。後続の名前についてもポインタスター（`*`）と配列次元をサポートします。
 
-### 3. GCC Statement Expressions `__extension__ ({...})`
+### 3. GCC文式（Statement Expressions） `__extension__ ({...})`
 
-GCC statement expressions appear in PostgreSQL headers:
+GCCの文式はPostgreSQLヘッダに登場します。
 
 ```c
 __extension__ ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a > _b ? _a : _b; })
 ```
 
-Two issues were found:
+2つの問題が見つかりました。
 
-#### Cast Detection False Positive
+#### キャスト検出の誤検知
 
-The cast detection in `unary()` checks for `(type)expr`. Since `__extension__` is in `is_type_start()`, the pattern `(__extension__ ({...}))` was misidentified as a cast expression.
+`unary()` におけるキャスト検出は `(type)expr` のパターンを確認します。`__extension__` が `is_type_start()` に含まれているため、`(__extension__ ({...}))` パターンがキャスト式として誤認識されていました。
 
-**Fix**: Added exclusion in cast detection: if `tokens[pos+1]` is `Extension` followed by `LParen LBrace`, skip cast parsing.
+**修正**: キャスト検出に除外条件を追加しました。`tokens[pos+1]` が `Extension` で、その後に `LParen LBrace` が続く場合、キャスト解析をスキップします。
 
-#### Statement Context
+#### 文コンテキスト
 
-`__extension__` followed by `({` in statement context was being treated as a variable declaration (because `__extension__` triggers `is_type_start`).
+文コンテキストで `__extension__` の後に `({` が続く場合、`__extension__` が `is_type_start` をトリガーするため、変数宣言として扱われていました。
 
-**Fix**: Added `Extension` case in `stmt()` that checks for the `__extension__ ({` pattern and parses it as an expression statement.
+**修正**: `stmt()` に `Extension` ケースを追加し、`__extension__ ({` パターンを確認して式文として解析するようにしました。
 
-### 4. Static Local Variable Brace Initializer Double-Consume Bug
+### 4. 静的ローカル変数の波括弧イニシャライザ二重消費バグ
 
-Static local variables with brace initializers caused "expected RBrace" errors:
+波括弧イニシャライザを持つ静的ローカル変数で "expected RBrace" エラーが発生していました。
 
 ```c
 static const Oid funcargs[] = {23, 23, 2275, 2281, 23, 16};
 ```
 
-**Root cause**: `parse_global_brace_init()` already consumes the closing `}`, but `static_local_var()` called `self.expect(TokenKind::RBrace)` again after it returned.
+**根本原因**: `parse_global_brace_init()` が既に閉じ `}` を消費しているにもかかわらず、`static_local_var()` がその後にさらに `self.expect(TokenKind::RBrace)` を呼び出していました。
 
-**Fix**: Removed the redundant `expect(RBrace)` call in `static_local_var()`.
+**修正**: `static_local_var()` の冗長な `expect(RBrace)` 呼び出しを削除しました。
 
-## Implementation Details
+## 実装の詳細
 
-### Extern Function Definition Detection Strategy
+### extern関数定義の検出戦略
 
-The approach uses a "try-skip, then decide" pattern:
+「スキップしてから判定」パターンを使用しています。
 
 ```
 extern handler:
@@ -89,15 +89,15 @@ extern handler:
      - If ';' → register as extern prototype (existing behavior)
 ```
 
-This is more robust than calling `is_function()` + `function_or_prototype()` directly, because `function_or_prototype()` requires fully parsing parameter declarations — which fails on complex glibc prototypes with `char[20]` parameters, `__restrict` qualifiers, etc.
+これは `is_function()` + `function_or_prototype()` を直接呼び出すよりも堅牢です。なぜなら、`function_or_prototype()` はパラメータ宣言を完全にパースする必要がありますが、`char[20]` パラメータや `__restrict` 修飾子などを含む複雑なglibcプロトタイプでは失敗するためです。
 
-## Results
+## 結果
 
-- **Integration tests**: 578 PASS, 0 FAIL
-- **PostgreSQL backend files**: 331/331 PASS (100%)
+- **統合テスト**: 578 パス、0 失敗
+- **PostgreSQLバックエンドファイル**: 331/331 パス（100%）
 
-Previous: 318/331 (96.1%)
+以前: 318/331（96.1%）
 
-## Files Modified
+## 変更されたファイル
 
-- `src/parser.rs` — All four fixes described above
+- `src/parser.rs` -- 上記4つの修正すべて

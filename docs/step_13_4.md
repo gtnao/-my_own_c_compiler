@@ -1,12 +1,12 @@
-# Step 13.4: Improved Error Messages
+# Step 13.4: エラーメッセージの改善
 
-## Overview
+## 概要
 
-Enhance error messages with GCC-style colored output and add a warning facility.
+GCCスタイルのカラー出力を備えたエラーメッセージの強化と、警告機能の追加を行います。
 
-## Error Format
+## エラーフォーマット
 
-Errors follow the GCC format with ANSI color codes:
+エラーはANSIカラーコードを使用したGCCフォーマットに従います:
 
 ```
 file.c:3:14: error: expected semicolon
@@ -14,13 +14,13 @@ file.c:3:14: error: expected semicolon
              ^
 ```
 
-- **`error:`** is displayed in bold red (`\x1b[1;31m`)
-- **`^`** caret marker is displayed in bold green (`\x1b[1;32m`)
-- Location is `file:line:column` (1-based)
+- **`error:`** は太字の赤色（`\x1b[1;31m`）で表示
+- **`^`** キャレットマーカーは太字の緑色（`\x1b[1;32m`）で表示
+- 位置は`ファイル:行:列`（1始まり）
 
-## Warning Support
+## 警告のサポート
 
-Added `warn_at()` method to `ErrorReporter`:
+`ErrorReporter`に`warn_at()`メソッドを追加:
 
 ```rust
 pub fn warn_at(&self, pos: usize, msg: &str) {
@@ -31,22 +31,22 @@ pub fn warn_at(&self, pos: usize, msg: &str) {
 }
 ```
 
-- **`warning:`** is displayed in bold magenta (`\x1b[1;35m`)
-- Unlike `error_at()`, `warn_at()` does not terminate the program
+- **`warning:`** は太字のマゼンタ（`\x1b[1;35m`）で表示
+- `error_at()`と異なり、`warn_at()`はプログラムを終了しない
 
-## Error vs Warning
+## エラーと警告の比較
 
-| Method | Color | Exits? |
+| メソッド | 色 | 終了するか? |
 |---|---|---|
-| `error_at()` | Red | Yes (`exit(1)`) |
-| `warn_at()` | Magenta | No (continues) |
+| `error_at()` | 赤 | はい（`exit(1)`） |
+| `warn_at()` | マゼンタ | いいえ（続行） |
 
-## Location Calculation
+## 位置の計算
 
-The `get_location()` method converts a byte offset into `(line, column, line_text)`:
+`get_location()`メソッドは、バイトオフセットを`(行, 列, 行テキスト)`に変換します:
 
-1. Count newlines before `pos` to determine line number
-2. Track the last newline position to compute column
-3. Extract the full line text for display
+1. `pos`の前にある改行をカウントして行番号を決定
+2. 最後の改行位置を追跡して列を計算
+3. 表示用に行全体のテキストを抽出
 
-This provides precise error locations for any position in the source file, including preprocessed multi-file inputs.
+これにより、プリプロセス済みの複数ファイル入力を含め、ソースファイル内の任意の位置に対して正確なエラー位置を提供できます。

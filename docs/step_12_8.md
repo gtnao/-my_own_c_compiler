@@ -1,17 +1,17 @@
-# Step 12.8: Multiple Variable Declarations on One Line
+# ステップ 12.8: 1行での複数変数宣言
 
-## Overview
+## 概要
 
-Support declaring multiple variables of the same base type in a single statement:
+同じ基本型の複数の変数を1つの文で宣言できるようにする:
 
 ```c
 int a = 1, b = 2, c = 3;
 int x, y;
 ```
 
-## Implementation
+## 実装
 
-After parsing the first variable declarator (with or without initializer), check for `,`. If found, continue parsing additional declarators until `;`:
+最初の変数宣言子（初期化子の有無を問わず）をパースした後、`,` があるかチェックする。見つかった場合は `;` まで追加の宣言子をパースし続ける:
 
 ```rust
 if self.current().kind == TokenKind::Comma {
@@ -28,16 +28,16 @@ if self.current().kind == TokenKind::Comma {
 }
 ```
 
-Each additional declarator can have its own pointer stars. For example:
+各追加宣言子は独自のポインタスターを持てる。例えば:
 ```c
 int a, *b, **c;  // a: int, b: int*, c: int**
 ```
 
-The base type (`int` in this case) is shared, but each declarator independently adds pointer indirection.
+基本型（この場合 `int`）は共有されるが、各宣言子は独立してポインタの間接参照を追加する。
 
-## Desugaring
+## 脱糖
 
-`int a = 1, b = 2;` is desugared into a Block:
+`int a = 1, b = 2;` は Block に脱糖される:
 ```
 Block([
     VarDecl { name: "a", ty: int, init: Some(1) },
@@ -45,7 +45,7 @@ Block([
 ])
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 int a = 1, b = 2; return a + b;                // => 3

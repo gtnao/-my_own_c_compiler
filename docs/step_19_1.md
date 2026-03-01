@@ -1,28 +1,28 @@
-# Phase 19: Advanced Code Generation
+# Phase 19: 高度なコード生成
 
-## Step 19.1: Struct Pass/Return by Value
-Already implemented. Small structs (≤16 bytes) are copied via memory operations. The compiler handles:
-- Struct return: copies struct to return area
-- Struct parameter: copies struct on stack for callee
+## Step 19.1: 構造体の値渡し/値返し
+既に実装済みです。小さな構造体（16バイト以下）はメモリ操作によりコピーされます。コンパイラは以下を処理します。
+- 構造体の返却: 構造体を返却領域にコピー
+- 構造体のパラメータ: 呼び出し先のためにスタック上に構造体をコピー
 
-## Step 19.2: Floating Point Operations
-Already implemented using XMM registers:
-- `float` and `double` arithmetic (add, sub, mul, div)
-- Float literals stored in `.data` section
-- Integer ↔ float conversions via `cvtsi2sd`/`cvttsd2si`
-- Float function arguments passed in XMM registers per ABI
+## Step 19.2: 浮動小数点演算
+XMMレジスタを使用して既に実装済みです。
+- `float` と `double` の算術演算（加算、減算、乗算、除算）
+- 浮動小数点リテラルは `.data` セクションに格納
+- 整数と浮動小数点の相互変換は `cvtsi2sd`/`cvttsd2si` 命令を使用
+- 浮動小数点の関数引数はABIに従いXMMレジスタで渡される
 
-## Step 19.3: volatile Semantics
-`volatile` is recognized as a type qualifier and parsed, but no special code generation is performed (all memory accesses are currently un-optimized, so they're effectively volatile).
+## Step 19.3: volatile セマンティクス
+`volatile` は型修飾子として認識・解析されますが、特別なコード生成は行いません（現在すべてのメモリアクセスは最適化されていないため、実質的にvolatileと同等の動作をします）。
 
-## Step 19.4: Variable Length Arrays (VLA)
-Not implemented — VLAs (`int a[n]` with runtime `n`) require dynamic stack allocation (`alloca`). PostgreSQL generally avoids VLAs, using `palloc()` instead.
+## Step 19.4: 可変長配列（VLA）
+未実装です。VLA（実行時の `n` を使う `int a[n]`）は動的スタック割り当て（`alloca`）が必要です。PostgreSQLは一般的にVLAを避け、代わりに `palloc()` を使用しています。
 
-## Step 19.5: Compound Literals
-Already implemented. `(type){initializers}` creates an anonymous local variable:
+## Step 19.5: 複合リテラル
+既に実装済みです。`(type){initializers}` は匿名のローカル変数を生成します。
 ```c
 struct S s = (struct S){.x = 3, .y = 4};
 ```
 
-## Step 19.6: Bit-field ABI Layout
-Already implemented with storage unit tracking, bit offset computation, and proper alignment.
+## Step 19.6: ビットフィールドのABIレイアウト
+ストレージユニットの追跡、ビットオフセットの計算、適切なアライメントを含め、既に実装済みです。

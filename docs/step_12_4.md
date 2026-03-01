@@ -1,12 +1,12 @@
-# Step 12.4: const Qualifier
+# ステップ 12.4: const 修飾子
 
-## Overview
+## 概要
 
-The `const` qualifier indicates that a variable's value should not be modified after initialization. In our compiler, `const` is parsed and recognized but not enforced — it has no effect on code generation.
+`const` 修飾子は、変数の値が初期化後に変更されるべきでないことを示す。本コンパイラでは、`const` はパースされ認識されるが強制はされない。コード生成には影響しない。
 
-## Implementation
+## 実装
 
-`const` is treated as a type qualifier that is simply consumed and ignored during type parsing:
+`const` は型修飾子として扱われ、型パース時に単に消費されて無視される:
 
 ```rust
 // At the start of parse_type()
@@ -15,13 +15,13 @@ while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
 }
 ```
 
-It can also appear after pointer stars:
+ポインタのアスタリスクの後にも出現しうる:
 ```c
 int *const p;   // const pointer to int
 const int *p;   // pointer to const int
 ```
 
-Both positions are handled:
+両方の位置が処理される:
 ```rust
 // After each * in pointer parsing
 while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
@@ -29,18 +29,18 @@ while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
 }
 ```
 
-## Why No Enforcement
+## 強制しない理由
 
-Real C compilers use `const` for:
-1. Compile-time error checking (assigning to a const variable)
-2. Optimization (placing const globals in read-only sections)
+実際の C コンパイラでは `const` は以下の目的で使用される:
+1. コンパイル時のエラーチェック（const 変数への代入検出）
+2. 最適化（const グローバルを読み取り専用セクションに配置）
 
-Our compiler doesn't enforce const-correctness because:
-- It would require tracking constness in the type system
-- The primary goal is correct code generation, not error checking
-- Adding enforcement can be done later without changing code generation
+本コンパイラで const の正当性を強制しない理由:
+- 型システムで const 性を追跡する必要がある
+- 主な目標は正しいコード生成であり、エラーチェックではない
+- コード生成を変更せずに後から強制を追加できる
 
-## Test Cases
+## テストケース
 
 ```c
 const int a = 42; return a;          // => 42

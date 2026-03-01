@@ -1,33 +1,33 @@
-# Step 14.7: `_Noreturn` Keyword
+# Step 14.7: `_Noreturn`キーワード
 
-## Overview
+## 概要
 
-Add support for `_Noreturn` and `__noreturn__` function specifiers. These are consumed and ignored — the compiler does not perform any special optimization or verification based on the noreturn attribute.
+`_Noreturn`および`__noreturn__`関数指定子のサポートを追加します。これらは消費されて無視されます — コンパイラはnoreturn属性に基づいた特別な最適化や検証を行いません。
 
-## Why This Matters
+## なぜ必要か
 
-PostgreSQL uses `_Noreturn` (via the `pg_noreturn` macro) to annotate functions like `ereport(ERROR, ...)` and `ExceptionalCondition()` that never return to their caller. System headers also use `__noreturn__` in `__attribute__` forms.
+PostgreSQLは、呼び出し元に戻ることのない`ereport(ERROR, ...)`や`ExceptionalCondition()`のような関数にアノテーションを付けるために`_Noreturn`（`pg_noreturn`マクロ経由）を使用しています。システムヘッダも`__attribute__`形式で`__noreturn__`を使用します。
 
 ```c
 _Noreturn void ExceptionalCondition(const char *conditionName, ...);
 __noreturn__ void abort(void);
 ```
 
-## Implementation
+## 実装
 
-### Token
+### トークン
 
-Added `Noreturn` variant to `TokenKind`.
+`TokenKind`に`Noreturn`バリアントを追加しました。
 
-### Lexer
+### レキサー
 
-Recognizes two spellings:
-- `_Noreturn` — C11 standard keyword
-- `__noreturn__` — GCC extension (double underscore form)
+2つの綴りを認識します:
+- `_Noreturn` — C11標準キーワード
+- `__noreturn__` — GCC拡張（アンダースコア2つの形式）
 
-### Parser
+### パーサー
 
-`_Noreturn` is handled alongside `inline` as a function specifier — consumed and ignored before the type in `parse_type()`:
+`_Noreturn`は`inline`と並んで関数指定子として処理されます — `parse_type()`内の型の前で消費・無視されます:
 
 ```rust
 while matches!(self.current().kind, TokenKind::Inline | TokenKind::Noreturn) {
@@ -35,15 +35,15 @@ while matches!(self.current().kind, TokenKind::Inline | TokenKind::Noreturn) {
 }
 ```
 
-Added to `is_type_keyword()` and `stmt()` type-start patterns so that declarations beginning with `_Noreturn` are properly recognized.
+`is_type_keyword()`および`stmt()`の型開始パターンに追加し、`_Noreturn`で始まる宣言が正しく認識されるようにしました。
 
-## Behavior
+## 動作
 
-- `_Noreturn` is a hint to the compiler that the function does not return
-- Our compiler ignores this hint — all functions are compiled with normal return paths
-- This is sufficient for compatibility since `_Noreturn` only affects optimization and warnings
+- `_Noreturn`は関数が戻らないことをコンパイラに示すヒント
+- 本コンパイラはこのヒントを無視する — すべての関数は通常の戻りパスでコンパイルされる
+- `_Noreturn`は最適化と警告にのみ影響するため、互換性としてはこれで十分
 
-## Test Cases
+## テストケース
 
 ```c
 _Noreturn void exit_fn() { return; } int main() { return 5; }   // → 5

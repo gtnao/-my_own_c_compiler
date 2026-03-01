@@ -1,8 +1,8 @@
-# Step 12.6: for Loop Scope
+# ステップ 12.6: for ループのスコープ
 
-## Overview
+## 概要
 
-Fix the scoping of variables declared in `for` loop init clauses. In C99+, a variable declared in a for loop's initialization is scoped to the loop body:
+`for` ループの初期化句で宣言された変数のスコープを修正する。C99 以降では、for ループの初期化で宣言された変数はループ本体にスコープが限定される:
 
 ```c
 int i = 100;
@@ -12,13 +12,13 @@ for (int i = 0; i < 5; i++) {
 return i;  // should be 100, not 5
 ```
 
-## Problem
+## 問題
 
-Before this fix, `for (int i = 0; ...)` declared `i` in the enclosing scope. When an outer variable `i` existed, the for-loop's `i` would shadow it permanently, and after the loop, the outer `i` would have the value from the loop.
+この修正前は、`for (int i = 0; ...)` は `i` を外側のスコープで宣言していた。外側に変数 `i` が存在する場合、for ループの `i` がそれを永続的にシャドウイングし、ループ終了後も外側の `i` はループの値を持ったままだった。
 
-## Fix
+## 修正
 
-Wrap the for-loop's init clause in a new scope when it contains a variable declaration:
+for ループの初期化句に変数宣言が含まれる場合、新しいスコープで囲む:
 
 ```rust
 let has_decl_init = self.is_type_start(&self.current().kind.clone());
@@ -33,24 +33,24 @@ if has_decl_init {
 }
 ```
 
-This ensures that `int i` declared in `for(int i = ...)` gets a unique mangled name that doesn't conflict with the outer `i`. When the scope ends, the inner `i` is removed from the scope map, and subsequent references to `i` resolve to the outer variable.
+これにより、`for(int i = ...)` で宣言された `int i` は外側の `i` と衝突しないユニークなマングル名を取得する。スコープ終了時に内側の `i` はスコープマップから除去され、以降の `i` への参照は外側の変数に解決される。
 
-## How Scoping Works
+## スコープの仕組み
 
-The compiler uses a scope stack with name mangling:
-- `enter_scope()` pushes a new HashMap onto the scope stack
-- `declare_var("i", ...)` creates a unique name like `i__2` and maps `"i"` → `"i__2"`
-- `resolve_var("i")` searches scopes from innermost to outermost
-- `leave_scope()` pops the innermost scope
+コンパイラは名前マングリングを伴うスコープスタックを使用する:
+- `enter_scope()` は新しい HashMap をスコープスタックにプッシュ
+- `declare_var("i", ...)` は `i__2` のようなユニークな名前を作成し、`"i"` → `"i__2"` をマッピング
+- `resolve_var("i")` は最も内側のスコープから外側に向かって検索
+- `leave_scope()` は最も内側のスコープをポップ
 
-Without the for-loop scope fix:
+for ループスコープの修正なし:
 ```
 Scope: { i → i__0 }
 for (int i = 0; ...) → declares i__1, but in the SAME scope!
 After loop: i still resolves to i__1 (the loop variable)
 ```
 
-With the fix:
+修正あり:
 ```
 Scope: { i → i__0 }
 enter_scope() → new scope: { }
@@ -59,7 +59,7 @@ leave_scope() → removes inner scope
 After loop: i resolves to i__0 (the outer variable) ✓
 ```
 
-## Test Cases
+## テストケース
 
 ```c
 int main() { int i = 100; for (int i = 0; i < 5; i++) {} return i; }  // => 100

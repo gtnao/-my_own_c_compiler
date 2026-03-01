@@ -1,12 +1,12 @@
-# Step 12.5: volatile Qualifier
+# ステップ 12.5: volatile 修飾子
 
-## Overview
+## 概要
 
-The `volatile` qualifier tells the compiler that a variable's value may change at any time (e.g., memory-mapped I/O, signal handlers). In our compiler, `volatile` is parsed and ignored — every memory access already goes through load/store instructions without optimization, so volatile semantics are naturally satisfied.
+`volatile` 修飾子は、変数の値がいつでも変化しうること（例: メモリマップド I/O、シグナルハンドラ）をコンパイラに伝える。本コンパイラでは `volatile` はパースされ無視される。すべてのメモリアクセスが既に最適化なしでロード/ストア命令を経由しているため、volatile セマンティクスは自然に満たされている。
 
-## Implementation
+## 実装
 
-`volatile` is handled identically to `const` — it's consumed during type parsing and has no effect on code generation:
+`volatile` は `const` と全く同様に処理される。型パース時に消費され、コード生成には影響しない:
 
 ```rust
 while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
@@ -14,16 +14,16 @@ while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile) {
 }
 ```
 
-## Why No Special Handling
+## 特別な処理をしない理由
 
-In an optimizing compiler, `volatile` prevents:
-- Caching values in registers across memory accesses
-- Reordering reads/writes to volatile variables
-- Eliminating "redundant" reads
+最適化を行うコンパイラでは、`volatile` は以下を防止する:
+- メモリアクセス間で値をレジスタにキャッシュすること
+- volatile 変数への読み書きの並べ替え
+- 「冗長な」読み取りの除去
 
-Since our compiler doesn't optimize (every variable access generates a memory load/store instruction), volatile semantics are already satisfied without any special handling.
+本コンパイラは最適化を行わない（すべての変数アクセスでメモリロード/ストア命令を生成する）ため、特別な処理なしで volatile セマンティクスが既に満たされている。
 
-## Test Cases
+## テストケース
 
 ```c
 volatile int a = 5; return a;  // => 5

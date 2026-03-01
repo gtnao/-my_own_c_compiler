@@ -1,12 +1,12 @@
-# Step 14.5: Hex, Octal, and Binary Integer Literals
+# Step 14.5: 16進数、8進数、2進数の整数リテラル
 
-## Overview
+## 概要
 
-Add support for hexadecimal (`0xFF`), octal (`077`), and binary (`0b101`) integer literal syntax. Previously, only decimal integer literals were supported.
+16進数（`0xFF`）、8進数（`077`）、2進数（`0b101`）の整数リテラル構文のサポートを追加します。以前は10進数の整数リテラルのみサポートしていました。
 
-## Why This Matters
+## なぜ必要か
 
-PostgreSQL and system headers use hex literals extensively for bit masks, flags, and memory constants:
+PostgreSQLやシステムヘッダでは、ビットマスク、フラグ、メモリ定数に16進数リテラルが広く使用されています:
 
 ```c
 #define PG_DETOAST_DATUM(datum) \
@@ -17,29 +17,29 @@ int flags = 0xFF;
 int permissions = 0755;
 ```
 
-## Implementation
+## 実装
 
-### Lexer Changes
+### レキサーの変更
 
-The `read_number_or_float()` method was refactored to detect prefix-based number formats:
+`read_number_or_float()`メソッドをリファクタリングし、プレフィックスベースの数値形式を検出するようにしました:
 
-1. **Hex (`0x`/`0X`)**: After consuming the `0x` prefix, read hex digits (`0-9`, `a-f`, `A-F`) and accumulate the value with base-16 arithmetic.
+1. **16進数（`0x`/`0X`）**: `0x`プレフィックスを消費した後、16進数字（`0-9`, `a-f`, `A-F`）を読み取り、16進算術で値を蓄積します。
 
-2. **Binary (`0b`/`0B`)**: After consuming the `0b` prefix, read binary digits (`0` or `1`) and accumulate with base-2 arithmetic.
+2. **2進数（`0b`/`0B`）**: `0b`プレフィックスを消費した後、2進数字（`0`または`1`）を読み取り、2進算術で値を蓄積します。
 
-3. **Octal (`0` followed by `0-7`)**: When a leading `0` is followed by an octal digit, read octal digits and accumulate with base-8 arithmetic. A bare `0` is just zero (decimal).
+3. **8進数（`0`の後に`0-7`）**: 先頭の`0`の後に8進数字が続く場合、8進数字を読み取り、8進算術で値を蓄積します。単独の`0`は単にゼロ（10進数）です。
 
-4. **Decimal/Float**: Handled by the extracted `read_decimal_float()` helper — same logic as before.
+4. **10進数/浮動小数点**: 抽出された`read_decimal_float()`ヘルパーで処理 — 以前と同じロジックです。
 
-### Code Structure
+### コード構造
 
-The method was split into three parts for clarity:
+メソッドは明確化のために3つの部分に分割されました:
 
-- `read_number_or_float()` — Entry point. Detects prefix and dispatches.
-- `read_decimal_float()` — Handles decimal integers and floating-point numbers (`.`, exponent, `f` suffix).
-- `skip_int_suffix()` — Consumes trailing `L`/`l`/`U`/`u` suffixes (shared by all integer formats).
+- `read_number_or_float()` — エントリポイント。プレフィックスを検出してディスパッチ。
+- `read_decimal_float()` — 10進整数と浮動小数点数（`.`、指数、`f`サフィックス）を処理。
+- `skip_int_suffix()` — 末尾の`L`/`l`/`U`/`u`サフィックスを消費（すべての整数形式で共有）。
 
-### Number Parsing Flow
+### 数値解析のフロー
 
 ```
 read_number_or_float()
@@ -50,9 +50,9 @@ read_number_or_float()
   └── otherwise → read_decimal_float(starts_with_dot=false)
 ```
 
-### Value Computation
+### 値の計算
 
-For hex, the accumulation loop:
+16進数の場合、蓄積ループ:
 ```rust
 let mut val: i64 = 0;
 while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_hexdigit() {
@@ -61,7 +61,7 @@ while self.pos < self.input.len() && (self.input[self.pos] as char).is_ascii_hex
 }
 ```
 
-For octal:
+8進数の場合:
 ```rust
 let mut val: i64 = 0;
 while self.pos < self.input.len() && self.input[self.pos] >= b'0' && self.input[self.pos] <= b'7' {
@@ -70,7 +70,7 @@ while self.pos < self.input.len() && self.input[self.pos] >= b'0' && self.input[
 }
 ```
 
-For binary:
+2進数の場合:
 ```rust
 let mut val: i64 = 0;
 while self.pos < self.input.len() && (self.input[self.pos] == b'0' || self.input[self.pos] == b'1') {
@@ -79,16 +79,16 @@ while self.pos < self.input.len() && (self.input[self.pos] == b'0' || self.input
 }
 ```
 
-All three formats produce a `TokenKind::Num(i64)` — the token representation is the same regardless of the source notation. Integer suffixes (`L`, `U`, `ULL`, etc.) are consumed and ignored after all integer formats.
+3つの形式すべてが`TokenKind::Num(i64)`を生成します — ソース表記に関係なくトークン表現は同じです。整数サフィックス（`L`, `U`, `ULL`など）はすべての整数形式の後に消費されて無視されます。
 
-## C Standard Notes
+## C標準に関する注記
 
-- Hex literals: C89/C90 and later. Prefix `0x` or `0X`.
-- Octal literals: C89/C90 and later. Leading `0` prefix.
-- Binary literals: Not in C standard (C23 proposal), but widely supported as a GCC/Clang extension.
-- The literal `0` is technically octal but evaluates to zero either way.
+- 16進数リテラル: C89/C90以降。プレフィックスは`0x`または`0X`。
+- 8進数リテラル: C89/C90以降。先頭の`0`プレフィックス。
+- 2進数リテラル: C標準には含まれない（C23で提案中）が、GCC/Clang拡張として広くサポート。
+- リテラル`0`は厳密には8進数だが、いずれにしてもゼロに評価される。
 
-## Test Cases
+## テストケース
 
 ```c
 int main() { return 0xFF; }       // → 255

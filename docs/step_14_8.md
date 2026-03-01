@@ -1,44 +1,44 @@
-# Step 14.8: `restrict` Type Qualifier
+# ステップ 14.8: `restrict` 型修飾子
 
-## Overview
+## 概要
 
-Add support for `restrict`, `__restrict`, and `__restrict__` type qualifiers. These are consumed and ignored — the compiler does not perform any alias analysis optimization.
+`restrict`、`__restrict`、`__restrict__` 型修飾子のサポートを追加する。これらは読み取られた後、無視される。コンパイラはエイリアス解析の最適化を行わない。
 
-## Why This Matters
+## なぜ必要か
 
-PostgreSQL uses `restrict` (or `__restrict__` via GCC) in performance-critical pointer parameters to hint that pointers don't alias:
+PostgreSQL はパフォーマンスが重要なポインタパラメータにおいて、ポインタがエイリアスしないことを示すヒントとして `restrict`（または GCC 経由の `__restrict__`）を使用している:
 
 ```c
 void memcpy(void * restrict dest, const void * restrict src, size_t n);
 int * __restrict__ pg_ptr;
 ```
 
-System headers (especially `<string.h>`, `<stdlib.h>`) also use `restrict` extensively.
+システムヘッダ（特に `<string.h>`、`<stdlib.h>`）でも `restrict` は広く使われている。
 
-## Implementation
+## 実装
 
-### Token
+### トークン
 
-Added `Restrict` variant to `TokenKind`.
+`TokenKind` に `Restrict` バリアントを追加した。
 
-### Lexer
+### 字句解析
 
-Recognizes three spellings:
-- `restrict` — C99 standard keyword
-- `__restrict` — GCC extension
-- `__restrict__` — GCC extension (double underscore form)
+3つの綴りを認識する:
+- `restrict` — C99 標準キーワード
+- `__restrict` — GCC 拡張
+- `__restrict__` — GCC 拡張（二重アンダースコア形式）
 
-### Parser
+### 構文解析
 
-`restrict` is treated as a type qualifier alongside `const` and `volatile`. It is consumed and ignored in all qualifier-skipping loops:
+`restrict` は `const` および `volatile` と並ぶ型修飾子として扱われる。すべての修飾子スキップループにおいて読み取り後に無視される:
 
-1. **`parse_type()`** — skipped before the base type (qualifiers before type)
-2. **Pointer qualifiers** — skipped after `*` (e.g., `int * restrict p`)
-3. **Parameter qualifiers** — skipped in function parameter type parsing
-4. **`is_type_keyword()`** — recognized as part of type declarations
-5. **`stmt()`** — recognized as starting a variable declaration
+1. **`parse_type()`** — 基本型の前でスキップされる（型の前の修飾子）
+2. **ポインタ修飾子** — `*` の後にスキップされる（例: `int * restrict p`）
+3. **パラメータ修飾子** — 関数パラメータの型解析でスキップされる
+4. **`is_type_keyword()`** — 型宣言の一部として認識される
+5. **`stmt()`** — 変数宣言の開始として認識される
 
-All four qualifier-skipping locations in the parser now include `Restrict`:
+パーサー内の4つの修飾子スキップ箇所すべてに `Restrict` が含まれるようになった:
 ```rust
 while matches!(self.current().kind,
     TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas) {
@@ -46,14 +46,14 @@ while matches!(self.current().kind,
 }
 ```
 
-## Behavior
+## 動作
 
-- `restrict` is a C99 optimization hint for pointer aliasing
-- Our compiler ignores this hint — no alias analysis is performed
-- The qualifier is simply consumed during parsing
-- `int * restrict p` is equivalent to `int *p` in our compiler
+- `restrict` はポインタのエイリアシングに関する C99 の最適化ヒントである
+- 本コンパイラではこのヒントを無視する — エイリアス解析は行わない
+- 修飾子は構文解析時に単に読み取られるだけである
+- `int * restrict p` は本コンパイラでは `int *p` と等価である
 
-## Test Cases
+## テストケース
 
 ```c
 int main() { int a = 5; int * restrict p = &a; return *p; }      // → 5

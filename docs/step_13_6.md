@@ -1,16 +1,16 @@
-# Step 13.6: Multi-File Compilation and CLI Options
+# Step 13.6: 複数ファイルのコンパイルとCLIオプション
 
-## Overview
+## 概要
 
-Add GCC-compatible command-line options for controlling the compilation pipeline:
+コンパイルパイプラインを制御するためのGCC互換コマンドラインオプションを追加します:
 
-- `-E` — Preprocess only (output preprocessed source)
-- `-S` — Compile to assembly (`.s` file)
-- `-c` — Compile to object file (`.o` file)
-- `-o <file>` — Specify output file name
-- Default (no flag) — Compile and link to executable, or output assembly to stdout for single files
+- `-E` — プリプロセスのみ（プリプロセス済みソースを出力）
+- `-S` — アセンブリにコンパイル（`.s`ファイル）
+- `-c` — オブジェクトファイルにコンパイル（`.o`ファイル）
+- `-o <file>` — 出力ファイル名を指定
+- デフォルト（フラグなし）— コンパイルしてリンクし実行ファイルを生成、または単一ファイルの場合はアセンブリを標準出力に出力
 
-## CLI Usage
+## CLIの使い方
 
 ```bash
 # Preprocess only
@@ -33,9 +33,9 @@ mycc file1.c file2.c -o prog # multi-file compilation
 mycc input.c                  # assembly to stdout (backwards compatible)
 ```
 
-## Implementation
+## 実装
 
-### Output Modes
+### 出力モード
 
 ```rust
 enum OutputMode {
@@ -46,9 +46,9 @@ enum OutputMode {
 }
 ```
 
-### Argument Parsing
+### 引数の解析
 
-Simple flag-based parsing that processes arguments left-to-right:
+引数を左から右に処理するシンプルなフラグベースの解析:
 
 ```rust
 match args[i].as_str() {
@@ -61,35 +61,35 @@ match args[i].as_str() {
 }
 ```
 
-Unknown flags are silently ignored for GCC compatibility.
+不明なフラグはGCC互換性のために無視されます。
 
-### Compilation Pipeline
+### コンパイルパイプライン
 
-The `compile_to_assembly()` function encapsulates the full pipeline:
+`compile_to_assembly()`関数がパイプライン全体をカプセル化します:
 
 ```
 read file → preprocess → lex → parse → codegen → assembly string
 ```
 
-For `-c` and executable modes, the assembly is written to a temp file and assembled using `gcc -c`. For linking, all object files are linked with `gcc`.
+`-c`および実行ファイルモードでは、アセンブリは一時ファイルに書き込まれ、`gcc -c`でアセンブルされます。リンク時には、すべてのオブジェクトファイルが`gcc`でリンクされます。
 
-### Multi-File Compilation
+### 複数ファイルのコンパイル
 
-When multiple input files are provided:
-1. Each file is independently compiled to assembly
-2. Each assembly file is assembled to an object file (via gcc -c)
-3. All object files are linked together (via gcc)
-4. Temporary files are cleaned up
+複数の入力ファイルが指定された場合:
+1. 各ファイルが独立してアセンブリにコンパイルされる
+2. 各アセンブリファイルがオブジェクトファイルにアセンブルされる（gcc -c経由）
+3. すべてのオブジェクトファイルがリンクされる（gcc経由）
+4. 一時ファイルがクリーンアップされる
 
-## Backward Compatibility
+## 後方互換性
 
-When invoked with a single file and no `-o` flag (the legacy mode used by `test.sh`), assembly is output to stdout. This maintains compatibility with existing test infrastructure.
+単一ファイルで`-o`フラグなし（`test.sh`で使用されるレガシーモード）で起動した場合、アセンブリは標準出力に出力されます。これにより既存のテストインフラストラクチャとの互換性が維持されます。
 
-## Output File Naming
+## 出力ファイルの命名規則
 
-| Mode | Default Output |
+| モード | デフォルト出力 |
 |---|---|
 | `-S input.c` | `input.s` |
 | `-c input.c` | `input.o` |
 | `input.c -o prog` | `prog` |
-| `input.c` (no flags) | stdout |
+| `input.c`（フラグなし） | 標準出力 |
