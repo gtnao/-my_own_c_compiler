@@ -72,12 +72,17 @@ impl<'a> Parser<'a> {
                 self.skip_static_assert();
                 continue;
             }
+            // Skip __extension__ (GCC extension marker, no semantic meaning for us)
+            if self.current().kind == TokenKind::Extension {
+                self.advance();
+            }
             // Skip top-level 'static' qualifier (treat static functions/vars as normal)
             if self.current().kind == TokenKind::Static {
                 self.advance();
             }
             // Handle extern declaration (just skip it — no storage allocated)
             if self.current().kind == TokenKind::Extern {
+                let extern_start = self.pos;
                 self.advance();
                 // Skip qualifiers
                 while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
@@ -133,10 +138,68 @@ impl<'a> Parser<'a> {
                     if self.current().kind == TokenKind::RBracket { self.advance(); }
                 }
                 self.skip_attribute();
-                self.expect(TokenKind::Semicolon);
+                // Skip __asm__("...") attribute
+                if self.current().kind == TokenKind::Asm {
+                    self.advance();
+                    if self.current().kind == TokenKind::LParen {
+                        self.advance();
+                        let mut depth = 1;
+                        while depth > 0 && self.current().kind != TokenKind::Eof {
+                            match self.current().kind {
+                                TokenKind::LParen => depth += 1,
+                                TokenKind::RParen => depth -= 1,
+                                _ => {}
+                            }
+                            self.advance();
+                        }
+                    }
+                }
+                self.skip_attribute();
+                // Extern function definition: extern type name(params) { body }
+                // If we see '{' after skipping params/attributes, this is a function definition
+                if self.current().kind == TokenKind::LBrace {
+                    // Restore pos to after 'extern' keyword and re-parse as function
+                    self.pos = extern_start;
+                    self.advance(); // skip 'extern'
+                    // Skip qualifiers
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                        self.advance();
+                    }
+                    if let Some(func) = self.function_or_prototype() {
+                        functions.push(func);
+                    }
+                    continue;
+                }
                 // Register type for codegen but mark as extern (no storage)
                 self.extern_names.insert(name.clone());
-                self.globals.push((ty, name, None));
+                self.globals.push((ty.clone(), name, None));
+                // Handle comma-separated extern declarations: extern type a, b, c;
+                while self.current().kind == TokenKind::Comma {
+                    self.advance();
+                    // Skip pointer stars
+                    while self.current().kind == TokenKind::Star {
+                        self.advance();
+                    }
+                    // Skip qualifiers
+                    while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                        self.advance();
+                    }
+                    if let TokenKind::Ident(extra_name) = &self.current().kind {
+                        let extra_name = extra_name.clone();
+                        self.advance();
+                        // Skip array dimensions
+                        while self.current().kind == TokenKind::LBracket {
+                            self.advance();
+                            while self.current().kind != TokenKind::RBracket && self.current().kind != TokenKind::Eof {
+                                self.advance();
+                            }
+                            if self.current().kind == TokenKind::RBracket { self.advance(); }
+                        }
+                        self.extern_names.insert(extra_name.clone());
+                        self.globals.push((ty.clone(), extra_name, None));
+                    }
+                }
+                self.expect(TokenKind::Semicolon);
                 continue;
             }
             // Handle top-level typedef
@@ -200,6 +263,28 @@ impl<'a> Parser<'a> {
                     }
                 };
                 self.advance();
+                // Handle function type typedef: typedef int Name(params...);
+                if self.current().kind == TokenKind::LParen {
+                    // Skip parameter list
+                    let mut depth = 1;
+                    self.advance();
+                    while depth > 0 && self.current().kind != TokenKind::Eof {
+                        match self.current().kind {
+                            TokenKind::LParen => depth += 1,
+                            TokenKind::RParen => depth -= 1,
+                            _ => {}
+                        }
+                        self.advance();
+                    }
+                    self.skip_attribute();
+                    self.expect(TokenKind::Semicolon);
+                    // Store function type as pointer to void (simplified)
+                    if let Some(ref tag) = self.last_struct_tag {
+                        self.typedef_struct_tags.insert(name.clone(), tag.clone());
+                    }
+                    self.typedefs.insert(name, Type::ptr_to(ty));
+                    continue;
+                }
                 // Handle array typedef: typedef int Name[N];
                 if self.current().kind == TokenKind::LBracket {
                     self.advance();
@@ -373,26 +458,9 @@ impl<'a> Parser<'a> {
         if self.current().kind == TokenKind::Eq {
             self.advance();
             if self.current().kind == TokenKind::LBrace {
-                // Brace initializer: = { val, val, ... }
-                self.advance();
+                // Brace initializer: = { val, val, ... } (supports nested braces)
                 let mut vals: Vec<i64> = Vec::new();
-                while self.current().kind != TokenKind::RBrace {
-                    let val = match &self.current().kind {
-                        TokenKind::Num(n) => *n,
-                        _ => {
-                            self.reporter.error_at(
-                                self.current().pos,
-                                "expected constant in global initializer",
-                            );
-                        }
-                    };
-                    self.advance();
-                    vals.push(val);
-                    if self.current().kind == TokenKind::Comma {
-                        self.advance();
-                    }
-                }
-                self.expect(TokenKind::RBrace);
+                self.parse_global_brace_init(&mut vals);
                 self.expect(TokenKind::Semicolon);
 
                 // Determine array size for empty brackets
@@ -408,7 +476,7 @@ impl<'a> Parser<'a> {
                 let mut bytes = Vec::new();
                 for val in &vals {
                     for i in 0..elem_size {
-                        bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                        bytes.push(((val.wrapping_shr((i * 8) as u32)) & 0xff) as u8);
                     }
                 }
                 // Pad remaining space with zeros
@@ -439,31 +507,105 @@ impl<'a> Parser<'a> {
                 data.push(0); // null terminator
                 self.globals.push((ty, name, Some(data)));
             } else {
-                // Scalar initializer: = num
-                let val = match &self.current().kind {
-                    TokenKind::Num(n) => *n,
-                    _ => {
-                        self.reporter.error_at(
-                            self.current().pos,
-                            "expected constant in global initializer",
-                        );
-                    }
-                };
-                self.advance();
+                // Scalar initializer: = const_expr
+                let val = self.eval_const_expr();
                 self.expect(TokenKind::Semicolon);
 
                 let elem_size = ty.size();
                 let mut bytes = Vec::new();
                 for i in 0..elem_size {
-                    bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                    bytes.push(((val.wrapping_shr((i * 8) as u32)) & 0xff) as u8);
                 }
 
                 self.globals.push((ty, name, Some(bytes)));
             }
+        } else if self.current().kind == TokenKind::Comma {
+            // Comma-separated global variable declarations: type a, b, c;
+            self.globals.push((ty.clone(), name, None));
+            while self.current().kind == TokenKind::Comma {
+                self.advance();
+                // Skip pointer stars
+                let mut var_ty = ty.clone();
+                while self.current().kind == TokenKind::Star {
+                    self.advance();
+                    var_ty = Type::ptr_to(var_ty);
+                }
+                let var_name = match &self.current().kind {
+                    TokenKind::Ident(s) => s.clone(),
+                    _ => {
+                        self.reporter.error_at(
+                            self.current().pos,
+                            "expected variable name",
+                        );
+                    }
+                };
+                self.advance();
+                // Array dimensions
+                let var_ty = {
+                    let mut dims = Vec::new();
+                    while self.current().kind == TokenKind::LBracket {
+                        self.advance();
+                        let len = self.eval_const_expr() as usize;
+                        self.expect(TokenKind::RBracket);
+                        dims.push(len);
+                    }
+                    let mut t = var_ty;
+                    for &l in dims.iter().rev() {
+                        t = Type::array_of(t, l);
+                    }
+                    t
+                };
+                self.skip_attribute();
+                self.globals.push((var_ty, var_name, None));
+            }
+            self.expect(TokenKind::Semicolon);
         } else {
             self.expect(TokenKind::Semicolon);
             self.globals.push((ty, name, None));
         }
+    }
+
+    /// Parse a brace-enclosed global initializer, flattening nested braces.
+    fn parse_global_brace_init(&mut self, vals: &mut Vec<i64>) {
+        self.advance(); // skip '{'
+        while self.current().kind != TokenKind::RBrace && self.current().kind != TokenKind::Eof {
+            // Skip designators like .member = or [idx] =
+            if self.current().kind == TokenKind::Dot {
+                self.advance(); // skip .
+                if let TokenKind::Ident(_) = &self.current().kind {
+                    self.advance(); // skip member name
+                }
+                if self.current().kind == TokenKind::Eq {
+                    self.advance(); // skip =
+                }
+            } else if self.current().kind == TokenKind::LBracket {
+                self.advance(); // skip [
+                let _idx = self.eval_const_expr();
+                self.expect(TokenKind::RBracket);
+                if self.current().kind == TokenKind::Eq {
+                    self.advance(); // skip =
+                }
+            }
+            // Nested brace initializer
+            if self.current().kind == TokenKind::LBrace {
+                self.parse_global_brace_init(vals);
+            } else if let TokenKind::Str(_) = &self.current().kind {
+                // String literal in global initializer — store as 0 (address not available at compile time)
+                self.advance();
+                // Concatenate adjacent strings
+                while let TokenKind::Str(_) = &self.current().kind {
+                    self.advance();
+                }
+                vals.push(0);
+            } else {
+                let val = self.eval_const_expr();
+                vals.push(val);
+            }
+            if self.current().kind == TokenKind::Comma {
+                self.advance();
+            }
+        }
+        self.expect(TokenKind::RBrace);
     }
 
     /// Parse a type specifier and return the corresponding Type.
@@ -576,20 +718,26 @@ impl<'a> Parser<'a> {
                     }
                 };
 
-                // Check for array member: name "[" num? "]"
-                let mem_ty = if self.current().kind == TokenKind::LBracket {
-                    self.advance();
-                    if self.current().kind == TokenKind::RBracket {
-                        // Flexible array member: name[]
+                // Check for array member: name ("[" num? "]")*
+                let mem_ty = {
+                    let mut dims = Vec::new();
+                    while self.current().kind == TokenKind::LBracket {
                         self.advance();
-                        Type::array_of(mem_ty, 0)
-                    } else {
-                        let len = self.eval_const_expr() as usize;
-                        self.expect(TokenKind::RBracket);
-                        Type::array_of(mem_ty, len)
+                        if self.current().kind == TokenKind::RBracket {
+                            // Flexible array member: name[]
+                            self.advance();
+                            dims.push(0);
+                        } else {
+                            let len = self.eval_const_expr() as usize;
+                            self.expect(TokenKind::RBracket);
+                            dims.push(len);
+                        }
                     }
-                } else {
-                    mem_ty
+                    let mut ty = mem_ty;
+                    for &len in dims.iter().rev() {
+                        ty = Type::array_of(ty, len);
+                    }
+                    ty
                 };
 
                 // Check for bit-field: "name : width"
@@ -667,6 +815,13 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     self.advance(); // skip comma
+                    // Skip pointer stars (e.g., char *a, *b;)
+                    while self.current().kind == TokenKind::Star {
+                        self.advance();
+                        while matches!(self.current().kind, TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict) {
+                            self.advance();
+                        }
+                    }
                     // Parse next member name with same type
                     mem_name = match &self.current().kind {
                         TokenKind::Ident(s) => {
@@ -691,6 +846,7 @@ impl<'a> Parser<'a> {
                         0
                     };
                 }
+                self.skip_attribute();
                 self.expect(TokenKind::Semicolon);
             }
             self.expect(TokenKind::RBrace);
@@ -866,7 +1022,15 @@ impl<'a> Parser<'a> {
         let mut ty = match self.current().kind {
             TokenKind::Int => {
                 self.advance();
-                if is_unsigned { Type::uint() } else { Type::int_type() }
+                // Handle: int unsigned, etc.
+                let mut local_unsigned = is_unsigned;
+                if self.current().kind == TokenKind::Unsigned {
+                    self.advance();
+                    local_unsigned = true;
+                } else if self.current().kind == TokenKind::Signed {
+                    self.advance();
+                }
+                if local_unsigned { Type::uint() } else { Type::int_type() }
             }
             TokenKind::Char => {
                 self.advance();
@@ -874,25 +1038,52 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Short => {
                 self.advance();
-                // Skip optional "int" (short int)
+                // Handle: short unsigned int, short int, etc.
+                let mut local_unsigned = is_unsigned;
+                if self.current().kind == TokenKind::Unsigned {
+                    self.advance();
+                    local_unsigned = true;
+                } else if self.current().kind == TokenKind::Signed {
+                    self.advance();
+                }
                 if self.current().kind == TokenKind::Int {
                     self.advance();
                 }
-                if is_unsigned { Type::ushort() } else { Type::short_type() }
+                if local_unsigned { Type::ushort() } else { Type::short_type() }
             }
             TokenKind::Long => {
                 self.advance();
-                // Skip optional "long" (long long) or "int" (long int)
-                if self.current().kind == TokenKind::Long {
+                // Handle: long unsigned int, long signed int, long long, long int, long double
+                let mut local_unsigned = is_unsigned;
+                if self.current().kind == TokenKind::Unsigned {
                     self.advance();
-                    // Skip optional "int" after "long long"
+                    local_unsigned = true;
+                } else if self.current().kind == TokenKind::Signed {
+                    self.advance();
+                }
+                if self.current().kind == TokenKind::DoubleKw {
+                    self.advance();
+                    Type::double_type() // long double = double (simplified)
+                } else if self.current().kind == TokenKind::Long {
+                    self.advance();
+                    // long long [unsigned] [int]
+                    if self.current().kind == TokenKind::Unsigned {
+                        self.advance();
+                        local_unsigned = true;
+                    } else if self.current().kind == TokenKind::Signed {
+                        self.advance();
+                    }
                     if self.current().kind == TokenKind::Int {
                         self.advance();
                     }
-                } else if self.current().kind == TokenKind::Int {
-                    self.advance();
+                    if local_unsigned { Type::ulong() } else { Type::long_type() }
+                } else {
+                    // long [int]
+                    if self.current().kind == TokenKind::Int {
+                        self.advance();
+                    }
+                    if local_unsigned { Type::ulong() } else { Type::long_type() }
                 }
-                if is_unsigned { Type::ulong() } else { Type::long_type() }
             }
             TokenKind::FloatKw => {
                 self.advance();
@@ -1569,7 +1760,24 @@ impl<'a> Parser<'a> {
                 self.advance();
                 self.static_local_var()
             }
-            TokenKind::Void | TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Extension | TokenKind::Typeof | TokenKind::Auto => {
+            TokenKind::Extension => {
+                // __extension__ can appear before variable declarations OR expressions
+                // Check if followed by '(' '{' which is a GCC statement expression
+                if self.pos + 1 < self.tokens.len()
+                    && self.tokens[self.pos + 1].kind == TokenKind::LParen
+                    && self.pos + 2 < self.tokens.len()
+                    && self.tokens[self.pos + 2].kind == TokenKind::LBrace
+                {
+                    // Statement expression: __extension__ ({ ... })
+                    // Treat as expression statement, skip the whole thing
+                    let e = self.expr();
+                    self.expect(TokenKind::Semicolon);
+                    Stmt::ExprStmt(e)
+                } else {
+                    self.var_decl()
+                }
+            }
+            TokenKind::Void | TokenKind::Int | TokenKind::Char | TokenKind::Short | TokenKind::Long | TokenKind::Signed | TokenKind::Unsigned | TokenKind::Bool | TokenKind::Struct | TokenKind::Union | TokenKind::Enum | TokenKind::Const | TokenKind::Volatile | TokenKind::Restrict | TokenKind::Alignas | TokenKind::FloatKw | TokenKind::DoubleKw | TokenKind::Attribute | TokenKind::Inline | TokenKind::Noreturn | TokenKind::Register | TokenKind::Typeof | TokenKind::Auto => {
                 self.var_decl()
             }
             _ => {
@@ -1771,6 +1979,9 @@ impl<'a> Parser<'a> {
             }
             (ty, has_empty)
         };
+
+        // Skip __attribute__ on local variable declaration
+        self.skip_attribute();
 
         // Handle initializer
         if self.current().kind == TokenKind::Eq {
@@ -1987,6 +2198,7 @@ impl<'a> Parser<'a> {
                                 decl_ty = Type { kind: TypeKind::Array(Box::new(decl_ty), size as usize), is_unsigned: false };
                             }
                         }
+                        self.skip_attribute();
                         let next_init = if self.current().kind == TokenKind::Eq {
                             self.advance();
                             Some(self.assign())
@@ -2042,6 +2254,7 @@ impl<'a> Parser<'a> {
                         decl_ty = Type { kind: TypeKind::Array(Box::new(decl_ty), size as usize), is_unsigned: false };
                     }
                 }
+                self.skip_attribute();
                 let next_init = if self.current().kind == TokenKind::Eq {
                     self.advance();
                     Some(self.assign())
@@ -2074,6 +2287,27 @@ impl<'a> Parser<'a> {
         };
         self.advance();
 
+        // Parse array dimensions: name[N][M]...
+        let ty = {
+            let mut dims = Vec::new();
+            while self.current().kind == TokenKind::LBracket {
+                self.advance();
+                if self.current().kind == TokenKind::RBracket {
+                    self.advance();
+                    dims.push(0);
+                } else {
+                    let len = self.eval_const_expr() as usize;
+                    self.expect(TokenKind::RBracket);
+                    dims.push(len);
+                }
+            }
+            let mut ty = ty;
+            for &len in dims.iter().rev() {
+                ty = Type::array_of(ty, len);
+            }
+            ty
+        };
+
         // Generate unique global name: __static.func.name.counter
         self.unique_counter += 1;
         let global_name = format!("__static.{}.{}", name, self.unique_counter);
@@ -2082,12 +2316,12 @@ impl<'a> Parser<'a> {
         let init_bytes = if self.current().kind == TokenKind::Eq {
             self.advance();
             if self.current().kind == TokenKind::LBrace {
-                // Struct/array initializer: { val1, val2, ... }
-                self.advance();
+                // Struct/array initializer with nested brace support
+                let mut vals: Vec<i64> = Vec::new();
+                self.parse_global_brace_init(&mut vals);
                 let mut bytes = vec![0u8; ty.size()];
                 let mut offset = 0;
-                while self.current().kind != TokenKind::RBrace {
-                    let val = self.eval_const_expr();
+                for val in &vals {
                     // Determine field size from struct type or use int (4 bytes)
                     let field_size = match &ty.kind {
                         crate::types::TypeKind::Struct(_, members) => {
@@ -2097,11 +2331,12 @@ impl<'a> Parser<'a> {
                                 4 // default
                             }
                         }
-                        _ => 4,
+                        crate::types::TypeKind::Array(base, _) => base.size(),
+                        _ => ty.size().min(8),
                     };
                     for i in 0..field_size {
                         if offset + i < bytes.len() {
-                            bytes[offset + i] = ((val >> (i * 8)) & 0xff) as u8;
+                            bytes[offset + i] = ((val.wrapping_shr((i * 8) as u32)) & 0xff) as u8;
                         }
                     }
                     offset += field_size;
@@ -2111,18 +2346,15 @@ impl<'a> Parser<'a> {
                             offset = m.offset;
                         }
                     }
-                    if self.current().kind == TokenKind::Comma {
-                        self.advance();
-                    }
                 }
-                self.expect(TokenKind::RBrace);
+                // Note: parse_global_brace_init already consumed the closing '}'
                 Some(bytes)
             } else {
                 let val = self.eval_const_expr();
                 let elem_size = ty.size();
                 let mut bytes = Vec::new();
                 for i in 0..elem_size {
-                    bytes.push(((val >> (i * 8)) & 0xff) as u8);
+                    bytes.push(((val.wrapping_shr((i * 8) as u32)) & 0xff) as u8);
                 }
                 Some(bytes)
             }
@@ -2511,12 +2743,49 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 // Cast expression or compound literal: "(" type ")" ...
+                // But NOT "(__extension__ ({...}))" which is a statement expression
                 if self.current().kind == TokenKind::LParen
                     && self.pos + 1 < self.tokens.len()
                     && self.is_type_start(&self.tokens[self.pos + 1].kind)
+                    && !(self.tokens[self.pos + 1].kind == TokenKind::Extension
+                        && self.pos + 2 < self.tokens.len()
+                        && self.tokens[self.pos + 2].kind == TokenKind::LParen
+                        && self.pos + 3 < self.tokens.len()
+                        && self.tokens[self.pos + 3].kind == TokenKind::LBrace)
                 {
                     self.advance(); // consume "("
                     let mut ty = self.parse_type();
+
+                    // Check for function pointer cast: (type (*)(params))
+                    if self.current().kind == TokenKind::LParen
+                        && self.pos + 1 < self.tokens.len()
+                        && self.tokens[self.pos + 1].kind == TokenKind::Star
+                    {
+                        // Skip: (*)(params...)
+                        self.advance(); // (
+                        self.advance(); // *
+                        self.expect(TokenKind::RParen);
+                        // Skip parameter list
+                        if self.current().kind == TokenKind::LParen {
+                            let mut depth = 1;
+                            self.advance();
+                            while depth > 0 && self.current().kind != TokenKind::Eof {
+                                match self.current().kind {
+                                    TokenKind::LParen => depth += 1,
+                                    TokenKind::RParen => depth -= 1,
+                                    _ => {}
+                                }
+                                self.advance();
+                            }
+                        }
+                        ty = Type::ptr_to(ty); // function pointer → simplified as ptr
+                        self.expect(TokenKind::RParen);
+                        let operand = self.unary();
+                        return Expr::Cast {
+                            ty,
+                            expr: Box::new(operand),
+                        };
+                    }
 
                     // Parse optional array dimensions: (int[3]) or (int[])
                     let mut has_empty_bracket = false;
@@ -2787,12 +3056,42 @@ impl<'a> Parser<'a> {
                         }
                     };
                     self.advance();
+                    // Handle array index in offsetof: offsetof(type, member[N])
+                    let array_index = if self.current().kind == TokenKind::LBracket {
+                        self.advance();
+                        let idx = self.eval_const_expr();
+                        self.expect(TokenKind::RBracket);
+                        Some(idx as usize)
+                    } else {
+                        None
+                    };
+                    // Handle chained member access: offsetof(type, member.submember)
+                    while self.current().kind == TokenKind::Dot {
+                        self.advance();
+                        if let TokenKind::Ident(_) = &self.current().kind {
+                            self.advance();
+                        }
+                        if self.current().kind == TokenKind::LBracket {
+                            self.advance();
+                            let _idx = self.eval_const_expr();
+                            self.expect(TokenKind::RBracket);
+                        }
+                    }
                     self.expect(TokenKind::RParen);
                     // Find offset in struct
                     if let crate::types::TypeKind::Struct(_, members) = &ty.kind {
                         for m in members {
                             if m.name == member_name {
-                                return Expr::Num(m.offset as i64);
+                                let base_offset = m.offset as i64;
+                                if let Some(idx) = array_index {
+                                    // offsetof(T, member[N]) = offset(member) + N * sizeof(element)
+                                    let elem_size = match &m.ty.kind {
+                                        crate::types::TypeKind::Array(base, _) => base.size(),
+                                        _ => m.ty.size(),
+                                    };
+                                    return Expr::Num(base_offset + (idx as i64) * (elem_size as i64));
+                                }
+                                return Expr::Num(base_offset);
                             }
                         }
                         self.reporter.error_at(

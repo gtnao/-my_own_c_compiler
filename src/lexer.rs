@@ -27,6 +27,32 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
+            // GCC preprocessor line directive: # linenum "filename" [flags]
+            // These appear at the start of a line in GCC -E output
+            if ch == '#' {
+                let start = self.pos;
+                // Check if this is a line directive (# followed by space and digit)
+                let mut is_line_directive = false;
+                let mut j = self.pos + 1;
+                while j < self.input.len() && self.input[j] == b' ' {
+                    j += 1;
+                }
+                if j < self.input.len() && (self.input[j] as char).is_ascii_digit() {
+                    is_line_directive = true;
+                }
+                // Also handle "# " at start (pragma or empty directive)
+                if is_line_directive || (self.pos == 0 || (self.pos > 0 && self.input[self.pos - 1] == b'\n')) {
+                    // Check if it looks like a preprocessor directive
+                    if is_line_directive {
+                        // Skip the entire line
+                        while self.pos < self.input.len() && self.input[self.pos] != b'\n' {
+                            self.pos += 1;
+                        }
+                        continue;
+                    }
+                }
+            }
+
             // Line comment: //
             if ch == '/' && self.peek_next() == Some('/') {
                 while self.pos < self.input.len() && self.input[self.pos] != b'\n' {
@@ -76,7 +102,7 @@ impl<'a> Lexer<'a> {
                     "typedef" => TokenKind::Typedef,
                     "static" => TokenKind::Static,
                     "extern" => TokenKind::Extern,
-                    "signed" => TokenKind::Signed,
+                    "signed" | "__signed__" => TokenKind::Signed,
                     "unsigned" => TokenKind::Unsigned,
                     "void" => TokenKind::Void,
                     "const" => TokenKind::Const,
@@ -546,8 +572,10 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check for 'f'/'F' suffix (float literal)
-        if self.pos < self.input.len() && (self.input[self.pos] == b'f' || self.input[self.pos] == b'F') {
+        // Check for 'f'/'F'/'l'/'L' suffix (float literal)
+        if self.pos < self.input.len() && (self.input[self.pos] == b'f' || self.input[self.pos] == b'F'
+            || ((self.input[self.pos] == b'l' || self.input[self.pos] == b'L') && is_float))
+        {
             is_float = true;
             self.pos += 1;
         }
